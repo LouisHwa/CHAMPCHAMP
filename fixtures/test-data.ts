@@ -27,7 +27,43 @@ export const ROUTES = {
   cart: '/cart',
   login: '/account/login',
   register: '/account/register',
-  greyJacketPdp: '/collections/frontpage/products/grey-jacket',
+} as const;
+
+/**
+ * Product handles confirmed from the catalogue page and Shopify analytics
+ * payload — the URL slug does not match the display name (e.g. "Black
+ * heels" lives at /products/flower-print-jeans), so tests must locate
+ * catalogue tiles by name (see CatalogPage.productLink), not by guessing
+ * the handle from PRODUCTS.
+ */
+export const PRODUCT_HANDLES = {
+  blackHeels: 'flower-print-jeans',
+  bronzeSandals: 'bronze-sandals',
+  brownShades: 'brown-shades',
+  greyJacket: 'grey-jacket',
+  noirJacket: 'noir-jacket',
+  stripedTop: 'striped-top',
+  whiteSandals: 'white-sandals',
+} as const;
+
+/**
+ * Confirmed on the live store (product options JSON): only Noir jacket
+ * offers more than one colour (Blue/Red across S/M/L). Black heels only
+ * has one colour (Red), so it cannot stand in for ENV-07's multi-variant
+ * requirement — TP-02-002/004/005 must use Noir jacket.
+ */
+export const VARIANTS = {
+  noirJacket: { sizes: ['S', 'M', 'L'], colours: ['Blue', 'Red'] },
+} as const;
+
+/** Search terms per TCS 2.3.3, confirmed against the baseline catalogue. */
+export const SEARCH_TERMS = {
+  exactMatch: 'Grey Jacket',
+  partialKeyword: 'jacket',
+  metadataMatch: 'glasses',
+  noMatch: 'backpack',
+  specialCharsOnly: '@#$%',
+  headerFooterControlCheck: 'sandals',
 } as const;
 
 export const EXTERNAL_DESTINATIONS = {
