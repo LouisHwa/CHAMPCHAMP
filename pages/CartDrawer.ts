@@ -9,6 +9,17 @@ import { Page, Locator } from '@playwright/test';
  * No order/subtotal total appeared anywhere in the drawer markup — only
  * each line's own total. TP-04-001's "order total" will need the full
  * /cart page instead; not needed for FN-01 to FN-03.
+ *
+ * CONFIRMED STALE-DOM PITFALL: #drawer is a server-rendered snapshot of
+ * the cart as of page load — it does NOT reflect an add/remove performed
+ * via AJAX during that same page's lifetime. Checking cart state right
+ * after an add-to-cart click on the same page will silently show the
+ * pre-click state (a false negative), not the real, current one. Verified
+ * directly: after adding an item, #drawer .row still counted 0 while a
+ * fresh navigation to /cart correctly counted 1. Use CartPage (a real
+ * navigation) to verify cart state immediately after an action on the
+ * same page; CartDrawer is reliable only for a snapshot taken right after
+ * its own page load (e.g. a baseline check before any action).
  */
 export class CartDrawer {
   readonly page: Page;
