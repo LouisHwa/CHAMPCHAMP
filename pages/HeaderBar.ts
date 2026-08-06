@@ -44,7 +44,12 @@ export class HeaderBar {
   }
 
   async gotoHome() {
-    await this.page.goto('/');
+    // domcontentloaded, not the default 'load': this storefront pulls in
+    // several third-party trackers/widgets (Facebook, Twitter, hCaptcha,
+    // Google+) and the browser's 'load' event can hang well past
+    // navigationTimeout waiting on one of them. Every page object's
+    // goto() uses the same override for this reason.
+    await this.page.goto('/', { waitUntil: 'domcontentloaded' });
   }
 
   /** TC-03-001 etc: the magnifying-glass icon control, not the header/footer "Search" links. */

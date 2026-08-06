@@ -15,7 +15,7 @@ export class MyAccountPage {
   }
 
   async goto() {
-    await this.page.goto('/account');
+    await this.page.goto('/account', { waitUntil: 'domcontentloaded' });
   }
 
   orderLink(index: number): Locator {

@@ -19,7 +19,7 @@ export class BlogPage {
   }
 
   async goto() {
-    await this.page.goto('/blogs/news');
+    await this.page.goto('/blogs/news', { waitUntil: 'domcontentloaded' });
   }
 
   postTitleLink(index = 0): Locator {

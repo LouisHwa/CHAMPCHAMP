@@ -60,15 +60,31 @@ test.describe('FN-01 Product Browsing and Navigation', () => {
     });
 
     await test.step('TC-01-001 #6 — Refer a friend control', async () => {
+      // "Refer a friend" is a mount point for a third-party widget (Sauce)
+      // whose script (sgmnt.min.js, loaded from a CloudFront CDN) 404s —
+      // confirmed via curl and via window.Sauce.isReady never becoming
+      // true even after a 15s wait. This is not a timing issue: the
+      // widget can never attach a click handler because the script it
+      // depends on no longer exists. Capture the script's response status
+      // as hard evidence alongside the visual result, rather than relying
+      // on a screenshot alone to prove the control is dead.
+      const sauceScriptResponsePromise = page
+        .waitForResponse((res) => res.url().includes('sgmnt.min.js'), { timeout: 15_000 })
+        .catch(() => null);
+
       await header.gotoHome();
+      const sauceScriptResponse = await sauceScriptResponsePromise;
+
       const urlBefore = page.url();
       await sidebar.referAFriendLink.click();
       const urlAfter = await recordUrl(page, testInfo, 'Refer a friend');
 
-      // The control is an in-page anchor (#sauce-show-refer-friend), so the
-      // expected result is a panel/overlay rather than a page load. Capture
-      // what actually happens; set the assertion to whatever TC-01-001 #6
-      // states as expected, and log a defect if they disagree.
+      await testInfo.attach('Refer a friend — third-party widget script (sgmnt.min.js)', {
+        body: sauceScriptResponse
+          ? `HTTP ${sauceScriptResponse.status()} ${sauceScriptResponse.statusText()} — a non-2xx response here means window.Sauce.isReady never becomes true, so the control's click handler is never attached regardless of wait time. Likely candidate for a defect log entry.`
+          : 'Request to sgmnt.min.js was not observed within 15s of navigation.',
+        contentType: 'text/plain',
+      });
       await testInfo.attach('Refer a friend — URL before / after', {
         body: `before: ${urlBefore}\nafter:  ${urlAfter}`,
         contentType: 'text/plain',

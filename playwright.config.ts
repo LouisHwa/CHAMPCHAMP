@@ -28,8 +28,6 @@ export default defineConfig({
     ['list'],
     ['html', { outputFolder: 'playwright-report', open: 'never' }],
     ['junit', { outputFile: 'test-results/junit.xml' }],
-    // Uncomment after: npm i -D allure-playwright
-    // ['allure-playwright', { resultsDir: 'allure-results' }],
   ],
 
   use: {

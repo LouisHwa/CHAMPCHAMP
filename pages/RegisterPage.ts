@@ -27,6 +27,6 @@ export class RegisterPage {
   }
 
   async goto() {
-    await this.page.goto('/account/register');
+    await this.page.goto('/account/register', { waitUntil: 'domcontentloaded' });
   }
 }

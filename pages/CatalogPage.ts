@@ -20,7 +20,7 @@ export class CatalogPage {
   }
 
   async goto() {
-    await this.page.goto('/collections/all');
+    await this.page.goto('/collections/all', { waitUntil: 'domcontentloaded' });
   }
 
   productLink(name: string): Locator {

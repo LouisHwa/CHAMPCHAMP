@@ -37,6 +37,6 @@ export class LoginPage {
   }
 
   async goto() {
-    await this.page.goto('/account/login');
+    await this.page.goto('/account/login', { waitUntil: 'domcontentloaded' });
   }
 }

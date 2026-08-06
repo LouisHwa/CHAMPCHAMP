@@ -71,7 +71,7 @@ export class AddressBookPage {
   }
 
   async goto() {
-    await this.page.goto('/account/addresses');
+    await this.page.goto('/account/addresses', { waitUntil: 'domcontentloaded' });
   }
 
   /** Scopes a field by its shared `name` within the nth existing address's edit form. */

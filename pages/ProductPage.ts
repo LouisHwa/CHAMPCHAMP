@@ -33,7 +33,7 @@ export class ProductPage {
   }
 
   async goto(handle: string) {
-    await this.page.goto(`/products/${handle}`);
+    await this.page.goto(`/products/${handle}`, { waitUntil: 'domcontentloaded' });
   }
 
   async selectSize(value: string) {
