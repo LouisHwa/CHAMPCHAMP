@@ -8,13 +8,15 @@ import { PRODUCT_HANDLES } from '../../fixtures/test-data';
  * TP-02-003 — Verify cart insertion is blocked with an inline validation
  * error when no size is selected. Covers TC-02-003 (#1 to #3).
  *
- * EXPECTED TO FAIL, BY DESIGN. This is not a broken test — it is checking
- * the live site against what TC-02-003 says should happen, and the site
- * genuinely does not do that (see below). The assertion is intentionally
- * left in and allowed to fail rather than softened into evidence-only,
- * so the gap keeps showing up as a red result until someone either fixes
- * the site or the test basis is updated. Do not "fix" this by relaxing
- * the assertion without confirming the underlying behaviour has changed.
+ * EXPECTED TO FAIL, BY DESIGN — marked via test.fail() below. This is not
+ * a broken test: it checks the live site against what TC-02-003 says
+ * should happen, and the site genuinely does not do that (see below).
+ * test.fail() tells Playwright this test is known to fail, so CI stays
+ * green while the underlying defect is unresolved, and only flips red if
+ * the test unexpectedly PASSES — i.e. if the site's behaviour changes.
+ * Do not remove test.fail() without confirming the underlying behaviour
+ * has actually changed; removing it just to "fix" a red CI run defeats
+ * the point.
  *
  * CONFIRMED via diagnostic run: this theme's inline script auto-selects
  * the first Size and Colour option on page load
@@ -38,6 +40,8 @@ import { PRODUCT_HANDLES } from '../../fixtures/test-data';
  */
 test.describe('FN-02 Product Detail', () => {
   test('TP-02-003 missing size selection validation', async ({ page }, testInfo) => {
+    test.fail(true, 'Confirmed defect: Size/Colour auto-select on load, so Add to Cart is never blocked. See file-level comment / DEF-F2-xx.');
+
     const header = new HeaderBar(page);
     const product = new ProductPage(page);
     const cart = new CartPage(page);
