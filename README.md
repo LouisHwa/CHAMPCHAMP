@@ -1,4 +1,6 @@
-# SDSS Automated Test Suite — TDC 2.0
+# CHAMP CHAMP
+
+## SDSS Automated Test Suite — TDC 2.0
 
 Automated execution of the SDSS test procedures (SDSS_TPS_1_1.0.0) against
 the Sauce Demo Shopify Store, using Playwright + TypeScript.
