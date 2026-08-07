@@ -3,6 +3,7 @@ import { HeaderBar } from '../../pages/HeaderBar';
 import { ProductPage } from '../../pages/ProductPage';
 import { CartPage } from '../../pages/CartPage';
 import { PRODUCT_HANDLES } from '../../fixtures/test-data';
+import { withFailureEvidence } from '../../utils/evidence';
 
 /**
  * TP-04-005 — Verify large quantity input is handled without a page
@@ -16,6 +17,11 @@ import { PRODUCT_HANDLES } from '../../fixtures/test-data';
  * page reference check) so a crash on one value doesn't take down the
  * rest of the test run. If the page is confirmed dead, remaining
  * attempts in that step are skipped rather than retried against it.
+ *
+ * The whole body is also wrapped in withFailureEvidence — see TP-04-003
+ * for why: test.fail() suppresses Playwright's automatic failure
+ * capture, so this is what leaves evidence behind if something unrelated
+ * (e.g. a Cloudflare interstitial) breaks the test instead of DEF-F4-04.
  *
  * Intercase dependency: TP-04-004's valid quantity acceptance step.
  */
@@ -51,76 +57,78 @@ test.describe('FN-04 Cart Management', () => {
       }
     }
 
-    await test.step('Set Up — confirm empty cart baseline', async () => {
-      await cart.goto();
-      expect(await cart.lineCount()).toBe(0);
-      await header.gotoHome();
-    });
-
-    let pageIsDead = false;
-
-    await test.step('Add a product to test large quantities against', async () => {
-      try {
-        await product.goto(PRODUCT_HANDLES.bronzeSandals);
-        const cartAddResponse = page
-          .waitForResponse((res) => res.url().includes('/cart/add'), { timeout: 10_000 })
-          .catch(() => null);
-        await product.addToCartButton.click();
-        await cartAddResponse;
+    await withFailureEvidence(page, testInfo, async () => {
+      await test.step('Set Up — confirm empty cart baseline', async () => {
         await cart.goto();
-        await testInfo.attach('Add product — result', {
-          body: 'Product added successfully; proceeding to large-quantity checks.',
-          contentType: 'text/plain',
-        });
-      } catch (error) {
-        pageIsDead = true;
-        await testInfo.attach('Add product — failed', {
-          body: `Could not add the test product, so the large-quantity checks below could not run: ${(error as Error).message}`,
-          contentType: 'text/plain',
-        });
-      }
-    });
+        expect(await cart.lineCount()).toBe(0);
+        await header.gotoHome();
+      });
 
-    for (const [stepLabel, qty] of [
-      ['TC-04-005 #1', '1000000'],
-      ['TC-04-005 #2', '1000001'],
-      ['TC-04-005 #3', '5000000'],
-    ] as const) {
-      await test.step(`${stepLabel} — quantity ${qty}`, async () => {
-        if (pageIsDead) {
-          await testInfo.attach(`Quantity ${qty} — skipped`, {
-            body: 'Skipped: either the page did not recover from a previous crash, or the test product could not be added in the first place.',
+      let pageIsDead = false;
+
+      await test.step('Add a product to test large quantities against', async () => {
+        try {
+          await product.goto(PRODUCT_HANDLES.bronzeSandals);
+          const cartAddResponse = page
+            .waitForResponse((res) => res.url().includes('/cart/add'), { timeout: 10_000 })
+            .catch(() => null);
+          await product.addToCartButton.click();
+          await cartAddResponse;
+          await cart.goto();
+          await testInfo.attach('Add product — result', {
+            body: 'Product added successfully; proceeding to large-quantity checks.',
             contentType: 'text/plain',
           });
-          expect.soft(false, `Skipped quantity ${qty} because a previous step in this test failed.`).toBe(true);
+        } catch (error) {
+          pageIsDead = true;
+          await testInfo.attach('Add product — failed', {
+            body: `Could not add the test product, so the large-quantity checks below could not run: ${(error as Error).message}`,
+            contentType: 'text/plain',
+          });
+        }
+      });
+
+      for (const [stepLabel, qty] of [
+        ['TC-04-005 #1', '1000000'],
+        ['TC-04-005 #2', '1000001'],
+        ['TC-04-005 #3', '5000000'],
+      ] as const) {
+        await test.step(`${stepLabel} — quantity ${qty}`, async () => {
+          if (pageIsDead) {
+            await testInfo.attach(`Quantity ${qty} — skipped`, {
+              body: 'Skipped: either the page did not recover from a previous crash, or the test product could not be added in the first place.',
+              contentType: 'text/plain',
+            });
+            expect.soft(false, `Skipped quantity ${qty} because a previous step in this test failed.`).toBe(true);
+            return;
+          }
+
+          const result = await attemptQuantity(page, qty);
+          await testInfo.attach(`Quantity ${qty} — page responsiveness`, {
+            body: `responsive: ${result.responsive}\ndetail: ${result.detail}`,
+            contentType: 'text/plain',
+          });
+          if (!result.responsive) pageIsDead = true;
+
+          expect.soft(result.responsive, `TC-04-005 expects the page to remain responsive at quantity ${qty}.`).toBe(true);
+        });
+      }
+
+      await test.step('Wrap Up — empty the cart, reload the storefront', async () => {
+        if (pageIsDead) {
+          await testInfo.attach('Wrap Up', {
+            body: 'Page did not recover from a crash; cleanup relies on a fresh context on the next test run rather than this one.',
+            contentType: 'text/plain',
+          });
           return;
         }
-
-        const result = await attemptQuantity(page, qty);
-        await testInfo.attach(`Quantity ${qty} — page responsiveness`, {
-          body: `responsive: ${result.responsive}\ndetail: ${result.detail}`,
-          contentType: 'text/plain',
-        });
-        if (!result.responsive) pageIsDead = true;
-
-        expect.soft(result.responsive, `TC-04-005 expects the page to remain responsive at quantity ${qty}.`).toBe(true);
+        await cart.goto();
+        const remaining = await cart.lineCount();
+        for (let i = remaining - 1; i >= 0; i--) {
+          await cart.removeLine(i).click();
+        }
+        await header.gotoHome();
       });
-    }
-
-    await test.step('Wrap Up — empty the cart, reload the storefront', async () => {
-      if (pageIsDead) {
-        await testInfo.attach('Wrap Up', {
-          body: 'Page did not recover from a crash; cleanup relies on a fresh context on the next test run rather than this one.',
-          contentType: 'text/plain',
-        });
-        return;
-      }
-      await cart.goto();
-      const remaining = await cart.lineCount();
-      for (let i = remaining - 1; i >= 0; i--) {
-        await cart.removeLine(i).click();
-      }
-      await header.gotoHome();
     });
   });
 });
