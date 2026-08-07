@@ -31,3 +31,37 @@ at a row in the Test Case Specification.
 Assumption A-005 in the test basis forbids abnormal traffic against the
 live store. Workers are capped at 2 and the CI matrix runs one browser on
 push, all browsers only on the nightly schedule. Do not raise these.
+
+## Secrets and environment
+
+Copy `.env.example` to `.env` and fill in real values (gitignored, never
+commit it). Needed for the shopper account (`TEST_ACCOUNT_*`) and IMAP
+access to its inbox (`IMAP_*`) for confirmation/reset email checks — see
+`fixtures/credentials.ts` and `utils/email.ts`. In CI, the same names are
+set as GitHub Actions Secrets instead.
+
+## Signed-in tests (auth setup)
+
+The login and register forms are hCaptcha-protected, and it challenges
+every automated attempt regardless of how the interaction is paced —
+confirmed there's no way to script past it. Any test that needs to
+already be signed in uses a saved session instead of logging in through
+the form:
+
+    npm run auth:setup
+
+This opens a real (non-headless, visible) browser at the login page. Log
+in yourself, solving the captcha by hand — a human still has to click
+through it once. When you close the browser window, Playwright saves the
+session to `playwright/.auth/user.json` (gitignored — this is a live
+session token, not something to share via git; every teammate running
+these tests needs to do this themselves, and redo it once the session
+expires).
+
+A spec that needs to start already signed in loads that file directly:
+
+```ts
+test.use({ storageState: 'playwright/.auth/user.json' });
+```
+
+Tests that don't set this stay signed out by default (ENV-01).

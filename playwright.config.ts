@@ -1,3 +1,4 @@
+import "dotenv/config";
 import { defineConfig, devices } from "@playwright/test";
 
 /**
@@ -7,6 +8,11 @@ import { defineConfig, devices } from "@playwright/test";
  * Evidence settings below implement the Special Procedural Requirements:
  *   SPR-01  destination URL recorded at every navigation  -> trace
  *   SPR-04  screenshot + URL captured on any failed step  -> screenshot + trace
+ *
+ * "dotenv/config" loads .env (gitignored) for the TEST_ACCOUNT and IMAP
+ * variables — see .env.example. In CI these come from GitHub Actions
+ * Secrets instead; dotenv silently no-ops if .env doesn't exist, so
+ * this is safe either way.
  */
 // run this first 'npm install --save-dev allure-playwright'
 
