@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from '../../utils/pacedTest';
 import { addProductAndGoToCheckout, fillDeliveryAddress, waitForShippingCost } from './_helpers';
 import { recordUrl, parseMoney } from '../../utils/evidence';
 
