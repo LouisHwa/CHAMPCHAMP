@@ -33,6 +33,30 @@ export async function captureFailureEvidence(
   });
 }
 
+/**
+ * Every page object navigates with waitUntil: 'domcontentloaded', because
+ * this storefront's third-party trackers can hang the 'load' event past
+ * navigationTimeout (see HeaderBar.gotoHome). The cost of that trade is
+ * that images are still in flight when a step captures its evidence, so
+ * screenshots and trace snapshots show a half-rendered page. Call this
+ * immediately before capturing evidence to close that gap without
+ * reintroducing the hang.
+ *
+ * Deliberately swallows its own timeout: the store carries several dead
+ * or blocked third-party images, and one of them failing to load must not
+ * fail a procedure whose expected result does not depend on it. Evidence
+ * quality is best-effort; the assertions around it are not.
+ */
+export async function settleForEvidence(page: Page, timeout = 5_000) {
+  await page
+    .waitForFunction(
+      () => Array.from(document.images).every((img) => img.complete && img.naturalWidth > 0),
+      null,
+      { timeout },
+    )
+    .catch(() => {});
+}
+
 /** Parses "£45.00" style money text into a plain number (45). Returns NaN if no amount is found. */
 export function parseMoney(text: string | null): number {
   if (!text) return NaN;

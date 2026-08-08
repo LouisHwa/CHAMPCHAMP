@@ -18,8 +18,29 @@ import { defineConfig, devices } from "@playwright/test";
 
 const isCI = !!process.env.CI;
 
+/**
+ * SPR-04 only requires evidence where a step fails, so a passing run
+ * records nothing by default — which is also what keeps artefact size
+ * sane in CI. Set EVIDENCE=1 to capture trace, video and screenshots on a
+ * green run as well, for reviewing how a procedure actually executed:
+ *   PowerShell   $env:EVIDENCE=1; npx playwright test ... --project=chromium
+ *   bash         EVIDENCE=1 npx playwright test ... --project=chromium
+ * There is no --video CLI flag, so this is the only way to get playback
+ * for a test that passes.
+ */
+const fullEvidence = !!process.env.EVIDENCE;
+
 export default defineConfig({
     testDir: "./tests",
+
+    // tests/_infra holds checks on the harness itself (e.g. whether the
+    // transplanted signed-in session still works). They discharge no TCS
+    // coverage item, so they must never appear in a compliance run or its
+    // report. testIgnore applies even when a file is named explicitly on the
+    // command line, so it is env-gated rather than absolute:
+    //   PowerShell   $env:INFRA=1; npx playwright test tests/_infra/...
+    //   bash         INFRA=1 npx playwright test tests/_infra/...
+    testIgnore: process.env.INFRA ? [] : "**/_infra/**",
 
     // A-005: no abnormal traffic against the production storefront.
     // Keep concurrency low and never raise this for "speed".
@@ -46,9 +67,17 @@ export default defineConfig({
         // so cache/cookies start empty for every test.
         storageState: undefined,
 
-        trace: "retain-on-failure",
-        screenshot: "only-on-failure",
-        video: "retain-on-failure",
+        trace: fullEvidence ? "on" : "retain-on-failure",
+        screenshot: fullEvidence ? "on" : "only-on-failure",
+        video: fullEvidence ? "on" : "retain-on-failure",
+
+        // Opt-in pacing for watching a run or reviewing its evidence:
+        //   PowerShell   $env:SLOWMO=500; npx playwright test ... --headed
+        //   bash         SLOWMO=500 npx playwright test ... --headed
+        // Defaults to 0, so CI and normal runs are unaffected. This is a
+        // viewing aid only — it does not make a step wait for anything, so
+        // never reach for it in place of a proper wait.
+        launchOptions: { slowMo: Number(process.env.SLOWMO ?? 0) },
 
         actionTimeout: 10_000,
         navigationTimeout: 20_000,

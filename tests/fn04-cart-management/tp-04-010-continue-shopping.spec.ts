@@ -3,7 +3,7 @@ import { HeaderBar } from '../../pages/HeaderBar';
 import { ProductPage } from '../../pages/ProductPage';
 import { CartPage } from '../../pages/CartPage';
 import { PRODUCT_HANDLES, ROUTES } from '../../fixtures/test-data';
-import { parseMoney, recordUrl } from '../../utils/evidence';
+import { parseMoney, recordUrl, settleForEvidence } from '../../utils/evidence';
 
 /**
  * TP-04-010 — Verify Continue Shopping returns the shopper to the
@@ -42,6 +42,11 @@ test.describe('FN-04 Cart Management', () => {
 
     await test.step('TC-04-010 #2 — click Continue Shopping', async () => {
       await cart.continueShoppingLink.click();
+      // Wait for the navigation to actually complete before reading the
+      // URL: page.url() does not wait, so without this the SPR-01 record
+      // can capture the cart page the click just left.
+      await page.waitForURL(`**${ROUTES.catalog}`);
+      await settleForEvidence(page);
       const destination = await recordUrl(page, testInfo, 'Continue Shopping');
       expect(destination).toContain(ROUTES.catalog);
     });
@@ -65,6 +70,7 @@ test.describe('FN-04 Cart Management', () => {
         await cart.removeLine(i).click();
       }
       await header.gotoHome();
+      await settleForEvidence(page);
     });
   });
 });
