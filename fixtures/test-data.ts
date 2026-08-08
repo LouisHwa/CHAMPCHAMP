@@ -64,6 +64,8 @@ export const SEARCH_TERMS = {
   noMatch: 'backpack',
   specialCharsOnly: '@#$%',
   headerFooterControlCheck: 'sandals',
+  /** TD-03-F — whitespace-only value. */
+  whitespaceOnly: ' ',
 } as const;
 
 export const EXTERNAL_DESTINATIONS = {

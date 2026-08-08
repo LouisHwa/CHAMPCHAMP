@@ -1,18 +1,20 @@
 import { test, expect } from '@playwright/test';
 import { HeaderBar } from '../../pages/HeaderBar';
 import { SearchResultsPage } from '../../pages/SearchResultsPage';
+import { SEARCH_TERMS } from '../../fixtures/test-data';
 import { recordUrl } from '../../utils/evidence';
 
 /**
- * TP-03-004 — Verify an empty or whitespace-only query does not run a
- * catalogue query. Covers TC-03-004 (#1 to #3).
+ * TP-03-003 — Verify an empty or whitespace-only query does not run a
+ * catalogue query. Covers TC-03-004 (#1 to #3). Renumbered from the old
+ * TP-03-004 per the refined TPS FN-03 — content unchanged.
  *
  * The objective states an unambiguous expected outcome (no query runs),
  * so both submissions hard-assert the no-query-run placeholder state
  * rather than treating the result as ambiguous evidence.
  */
 test.describe('FN-03 Product Search', () => {
-  test('TP-03-004 empty and whitespace-only submission', async ({ page }, testInfo) => {
+  test('TP-03-003 empty and whitespace-only submission', async ({ page }, testInfo) => {
     const header = new HeaderBar(page);
     const search = new SearchResultsPage(page);
 
@@ -36,7 +38,7 @@ test.describe('FN-03 Product Search', () => {
 
     await test.step('TC-03-004 #2 / #3 — whitespace-only submission via search icon', async () => {
       await header.gotoHome();
-      await header.searchByIcon(' ');
+      await header.searchByIcon(SEARCH_TERMS.whitespaceOnly);
       const url = await recordUrl(page, testInfo, 'Whitespace-only submission');
       await testInfo.attach('Whitespace-only submission — system response', {
         body: `destination: ${url}`,
