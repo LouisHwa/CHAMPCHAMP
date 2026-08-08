@@ -32,6 +32,10 @@ import { parseMoney, withFailureEvidence } from '../../utils/evidence';
 test.describe('FN-04 Cart Management', () => {
   test('TP-04-001 quantity entry validation', async ({ page }, testInfo) => {
     test.fail(true, 'Confirmed defect DEF-F4-03: invalid quantity silently reverts, no validation message is ever shown.');
+    // This procedure merges what used to be three separate tests
+    // (TC-04-001/002/003), and the default 30s timeout — already tight
+    // with slowMo pacing added — cut it off mid-run, confirmed live.
+    test.setTimeout(90_000);
 
     const header = new HeaderBar(page);
     const product = new ProductPage(page);
