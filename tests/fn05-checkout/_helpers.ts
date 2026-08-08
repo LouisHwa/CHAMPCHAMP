@@ -1,9 +1,50 @@
-import { Page, expect } from '@playwright/test';
+import { Browser, Page, expect } from '@playwright/test';
 import { HeaderBar } from '../../pages/HeaderBar';
 import { CatalogPage } from '../../pages/CatalogPage';
 import { ProductPage } from '../../pages/ProductPage';
 import { CartPage } from '../../pages/CartPage';
 import { CheckoutPage } from '../../pages/CheckoutPage';
+
+const STORAGE_STATE_PATH = 'playwright/.auth/user.json';
+const BASE_URL = 'https://sauce-demo.myshopify.com';
+
+/**
+ * TD-05-BILL — a billing address differing from TD-05-UK in every
+ * field, so a separately entered billing address can be told apart
+ * from one reused from shipping (TP-05-005's TC-05-013 section).
+ */
+export const BILLING_ADDRESS = {
+  firstName: 'Billing',
+  lastName: 'Payer',
+  address1: '10 Downing Street',
+  city: 'London',
+  postcode: 'SW1A 2AA',
+};
+
+/** TD-05-NOC — name on card, used wherever the card fields are filled. */
+export const NAME_ON_CARD = 'Test User';
+
+/**
+ * Starts a browser context already signed in, standing in for a live
+ * "sign in" step wherever a TC calls for one — the login form is
+ * hCaptcha-protected and rejects any Playwright-driven browser
+ * regardless of pacing (confirmed all session, see
+ * auth-setup-guide.md). Needs a real, freshly captured
+ * playwright/.auth/user.json to work — see that guide for the capture
+ * steps. baseURL is passed explicitly since manually created contexts
+ * don't inherit it from playwright.config.ts the way the default
+ * page/context fixture does.
+ */
+export async function startSignedInContext(browser: Browser) {
+  const context = await browser.newContext({ baseURL: BASE_URL, storageState: STORAGE_STATE_PATH });
+  const page = await context.newPage();
+  const header = new HeaderBar(page);
+  const catalog = new CatalogPage(page);
+  const product = new ProductPage(page);
+  const cart = new CartPage(page);
+  const checkout = new CheckoutPage(page);
+  return { context, page, header, catalog, product, cart, checkout };
+}
 
 /**
  * Shared FN-05 setup: empty-cart baseline (ENV-08) through to a fresh
@@ -33,8 +74,14 @@ export async function addProductAndGoToCheckout(page: Page) {
     if (value) await product.selectColour(value);
   }
 
+  // Wait for the actual /cart/add response, not just networkidle — with
+  // slowMo pacing now in the mix, networkidle alone was confirmed live
+  // to sometimes resolve before the add-to-cart AJAX call completes,
+  // leaving the cart genuinely empty at the next step. Start waiting
+  // before the click so there's no race between them.
+  const cartAddResponse = page.waitForResponse((r) => r.url().includes('/cart/add'), { timeout: 10_000 }).catch(() => null);
   await product.addToCartButton.click();
-  await page.waitForLoadState('networkidle').catch(() => {});
+  await cartAddResponse;
   await cart.goto();
   await cart.checkoutButton.click();
   await page.waitForLoadState('domcontentloaded');

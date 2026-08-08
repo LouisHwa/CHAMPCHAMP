@@ -25,3 +25,20 @@ export const IMAP_CONFIG = {
   user: () => requireEnv('IMAP_USER'),
   appPassword: () => requireEnv('IMAP_APP_PASSWORD'),
 };
+
+/**
+ * TD-05-E — the guest contact email bound in the refined TPS FN-05
+ * (competitiontdc2.0@gmail.com), a separate mailbox from TEST_ACCOUNT's.
+ * Used for TP-05-005's guest-order confirmation email check.
+ */
+export const GUEST_CONTACT = {
+  email: () => requireEnv('GUEST_EMAIL'),
+};
+
+/** IMAP access to GUEST_CONTACT's inbox — separate credentials from IMAP_CONFIG. */
+export const GUEST_IMAP_CONFIG = {
+  host: () => requireEnv('GUEST_IMAP_HOST'),
+  port: () => Number(requireEnv('GUEST_IMAP_PORT')),
+  user: () => requireEnv('GUEST_IMAP_USER'),
+  appPassword: () => requireEnv('GUEST_IMAP_APP_PASSWORD'),
+};

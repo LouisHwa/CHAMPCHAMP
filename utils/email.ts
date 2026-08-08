@@ -2,13 +2,25 @@ import { ImapFlow } from 'imapflow';
 import { simpleParser } from 'mailparser';
 import { IMAP_CONFIG } from '../fixtures/credentials';
 
+type ImapConfig = {
+  host: () => string;
+  port: () => number;
+  user: () => string;
+  appPassword: () => string;
+};
+
 /**
- * Polls the test inbox for the most recent email matching a subject
+ * Polls a test inbox for the most recent email matching a subject
  * substring, arriving after `since`. Needed because the live store
  * sends real email via Shopify's own mail system for order confirmation
- * (TP-05-008), the order-status link (TP-06-017), and password reset
+ * (TP-05-005), the order-status link (TP-06-017), and password reset
  * (TP-07-016/017) — there's no way to get those links without reading a
  * real inbox.
+ *
+ * Defaults to IMAP_CONFIG (the signed-in TEST_ACCOUNT's mailbox); pass
+ * GUEST_IMAP_CONFIG to check TD-05-E's separate guest-contact mailbox
+ * instead (see fixtures/credentials.ts) — no existing call site needs
+ * to change.
  *
  * Uses mailparser's simpleParser rather than regexing the raw IMAP
  * source directly, since real email bodies are typically
@@ -19,15 +31,16 @@ export async function waitForEmail(
   subjectContains: string,
   since: Date,
   timeoutMs = 60_000,
+  imapConfig: ImapConfig = IMAP_CONFIG,
 ): Promise<{ subject: string; text: string; html: string }> {
   const deadline = Date.now() + timeoutMs;
 
   while (Date.now() < deadline) {
     const client = new ImapFlow({
-      host: IMAP_CONFIG.host(),
-      port: IMAP_CONFIG.port(),
+      host: imapConfig.host(),
+      port: imapConfig.port(),
       secure: true,
-      auth: { user: IMAP_CONFIG.user(), pass: IMAP_CONFIG.appPassword() },
+      auth: { user: imapConfig.user(), pass: imapConfig.appPassword() },
       logger: false,
     });
 
