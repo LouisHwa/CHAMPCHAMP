@@ -7,6 +7,8 @@ import { CheckoutPage } from '../../pages/CheckoutPage';
 import { ConfirmationPage } from '../../pages/ConfirmationPage';
 import { fillDeliveryAddress, fillCard, TEST_CARDS } from './_helpers';
 import { recordUrl, parseMoney } from '../../utils/evidence';
+import { TEST_ACCOUNT } from '../../fixtures/credentials';
+import { waitForEmail, extractLink } from '../../utils/email';
 
 /**
  * TP-05-008 — Verify a guest can complete a purchase end to end: order
@@ -16,12 +18,12 @@ import { recordUrl, parseMoney } from '../../utils/evidence';
  *
  * TC-05-008 #7 specifies checking the inbox of guest@test.com — a
  * literal test-data address this project does not control (no mailbox
- * access). The IMAP-based inbox-check infra (fixtures/credentials.ts,
- * utils/email.ts) is still work in progress on a teammate's branch and
- * isn't present here yet, so #7 is executed as far as the UI allows
- * (entering the guest email and confirming checkout proceeds without an
- * account) and the inbox verification itself is recorded as
- * not-executable on this branch rather than skipped silently.
+ * access for it, and never will, since it's not a real account). The
+ * Contact email is substituted with TEST_ACCOUNT.email() (an inbox this
+ * project DOES have IMAP access to, per auth-setup-guide.md) so the
+ * inbox-verification step is actually executable rather than skipped —
+ * the checkout itself is still exercised as a guest (no sign-in), only
+ * the literal address differs from the TC's test data.
  */
 test.describe('FN-05 Checkout', () => {
   test('TP-05-008 guest purchase end to end', async ({ page }, testInfo) => {
@@ -56,8 +58,11 @@ test.describe('FN-05 Checkout', () => {
       await expect(checkout.costSummaryRow('Total').first()).toBeVisible();
     });
 
+    const guestEmail = TEST_ACCOUNT.email();
+    const orderStartedAt = new Date();
+
     await test.step('TC-05-008 #2 — guest email entered without signing in', async () => {
-      await checkout.emailField.fill('guest@test.com');
+      await checkout.emailField.fill(guestEmail);
       await expect(checkout.signInLink).toBeVisible();
       const url = await recordUrl(page, testInfo, 'Guest email entered');
       expect(url).toContain('/checkouts/');
@@ -99,15 +104,21 @@ test.describe('FN-05 Checkout', () => {
       });
     });
 
-    await test.step('TC-05-008 #7 — confirmation email (not executable on this branch)', async () => {
-      await testInfo.attach('Confirmation email check', {
-        body:
-          'guest@test.com is a literal test-data address this project does not control an inbox for. ' +
-          'IMAP inbox-checking infra (fixtures/credentials.ts, utils/email.ts) is still in progress on a ' +
-          'teammate\'s branch and is not present on fn05-checkout — this step could not be executed and is ' +
-          'recorded here rather than silently skipped.',
+    await test.step('TC-05-008 #7 — confirmation email received with order number and View order link', async () => {
+      const email = await waitForEmail('order', orderStartedAt, 90_000);
+      await testInfo.attach('Confirmation email', {
+        body: `subject: ${email.subject}\n\n${email.text}`,
         contentType: 'text/plain',
       });
+
+      const viewOrderLink = extractLink(email.html, 'View order');
+      await testInfo.attach('Confirmation email — View order link', {
+        body: viewOrderLink ?? '(not found)',
+        contentType: 'text/plain',
+      });
+
+      expect(email.subject.toLowerCase()).toContain('order');
+      expect(viewOrderLink).not.toBeNull();
     });
   });
 });
