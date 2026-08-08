@@ -11,7 +11,9 @@
     "report": "playwright show-report",
     "auth:setup": "playwright codegen --save-storage=playwright/.auth/user.json https://sauce-demo.myshopify.com/account/login",
     "auth:setup:chrome": "playwright codegen --channel=chrome --save-storage=playwright/.auth/user.json https://sauce-demo.myshopify.com/account/login",
-    "auth:setup:edge": "playwright codegen --channel=msedge --save-storage=playwright/.auth/user.json https://sauce-demo.myshopify.com/account/login"
+    "auth:setup:edge": "playwright codegen --channel=msedge --save-storage=playwright/.auth/user.json https://sauce-demo.myshopify.com/account/login",
+    "auth:cookie-to-state": "node scripts/cookies-to-storage-state.mjs",
+    "auth:verify": "node scripts/verify-auth-session.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.49.0",

@@ -43,12 +43,17 @@ export default defineConfig({
     testIgnore: process.env.INFRA ? [] : "**/_infra/**",
 
     // A-005: no abnormal traffic against the production storefront.
-    // Keep concurrency low and never raise this for "speed".
-    workers: isCI ? 2 : 2,
+    // Running in parallel is what actually trips Cloudflare fastest
+    // (confirmed 7 August), so this is 1 everywhere, CI included — never
+    // raise it for "speed".
+    workers: 1,
     fullyParallel: false,
 
     forbidOnly: isCI,
-    retries: isCI ? 1 : 0,
+    // A retry immediately re-hits the live site right after a failure
+    // that may itself have been Cloudflare — no benefit, just more
+    // traffic. Re-run manually (paced) instead.
+    retries: 0,
     timeout: 30_000,
     expect: { timeout: 7_000 },
 
@@ -71,13 +76,15 @@ export default defineConfig({
         screenshot: fullEvidence ? "on" : "only-on-failure",
         video: fullEvidence ? "on" : "retain-on-failure",
 
-        // Opt-in pacing for watching a run or reviewing its evidence:
-        //   PowerShell   $env:SLOWMO=500; npx playwright test ... --headed
-        //   bash         SLOWMO=500 npx playwright test ... --headed
-        // Defaults to 0, so CI and normal runs are unaffected. This is a
-        // viewing aid only — it does not make a step wait for anything, so
-        // never reach for it in place of a proper wait.
-        launchOptions: { slowMo: Number(process.env.SLOWMO ?? 0) },
+        // Cloudflare served an interstitial during a signed-out FN-04 batch
+        // on 7 August — automating a live, Cloudflare-protected site at
+        // machine speed reads as bot traffic. Pacing every action to
+        // roughly how a human actually clicks/types (not machine-instant)
+        // is the lecturer-confirmed mitigation, so this is on by default
+        // rather than opt-in. Override for a specific run if needed:
+        //   PowerShell   $env:SLOWMO=0; npx playwright test ...
+        //   bash         SLOWMO=0 npx playwright test ...
+        launchOptions: { slowMo: Number(process.env.SLOWMO ?? 600) },
 
         actionTimeout: 10_000,
         navigationTimeout: 20_000,

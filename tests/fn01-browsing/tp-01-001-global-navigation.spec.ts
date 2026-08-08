@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from '../../utils/pacedTest';
 import { HeaderBar } from '../../pages/HeaderBar';
 import { SidebarNav } from '../../pages/SidebarNav';
 import { ROUTES } from '../../fixtures/test-data';

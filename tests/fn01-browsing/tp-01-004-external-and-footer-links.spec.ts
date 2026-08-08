@@ -1,4 +1,5 @@
-import { test, expect, Locator } from '@playwright/test';
+import { test, expect } from '../../utils/pacedTest';
+import type { Locator } from '@playwright/test';
 import { HeaderBar } from '../../pages/HeaderBar';
 import { SidebarNav } from '../../pages/SidebarNav';
 import { Footer } from '../../pages/Footer';
