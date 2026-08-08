@@ -3,6 +3,7 @@ import { HeaderBar } from '../../pages/HeaderBar';
 import { ProductPage } from '../../pages/ProductPage';
 import { CartPage } from '../../pages/CartPage';
 import { PRODUCT_HANDLES } from '../../fixtures/test-data';
+import { recordUrl } from '../../utils/evidence';
 
 /**
  * TP-02-003 — Verify cart insertion is blocked with an inline validation
@@ -55,13 +56,30 @@ test.describe('FN-02 Product Detail', () => {
         body: String(baselineLineCount),
         contentType: 'text/plain',
       });
+      // The attachment above claimed an expectation the code never checked.
+      // The TPS Set Up requires the cart to be CONFIRMED empty: ENV-08 is a
+      // precondition, so a non-empty cart invalidates the run.
+      expect(baselineLineCount).toBe(0);
     });
 
-    await test.step('TC-02-003 #1 — Size dropdown value on load', async () => {
+    await test.step('TC-02-003 #1 — Size dropdown, Add to Cart and Sold Out state on load', async () => {
       await product.goto(PRODUCT_HANDLES.noirJacket);
-      const sizeOnLoad = await product.sizeSelect.inputValue();
-      await testInfo.attach('Size dropdown value on page load', {
-        body: sizeOnLoad,
+      await recordUrl(page, testInfo, 'Noir jacket PDP');
+
+      // TPS #1 asks for three readings on load, not one: the Size dropdown
+      // value, whether Add to Cart is enabled, and whether a Sold Out badge
+      // is shown. Taken without operating any variant control.
+      const [sizeOnLoad, addToCartEnabled, soldOutBadgeCount] = await Promise.all([
+        product.sizeSelect.inputValue(),
+        product.addToCartButton.isEnabled(),
+        page.locator('.sold-out').count(),
+      ]);
+
+      await testInfo.attach('Variant controls state on page load', {
+        body:
+          `Size dropdown: ${sizeOnLoad === '' ? '(no selection)' : sizeOnLoad}\n` +
+          `Add to Cart enabled: ${addToCartEnabled}\n` +
+          `Sold Out badge present: ${soldOutBadgeCount > 0}`,
         contentType: 'text/plain',
       });
     });

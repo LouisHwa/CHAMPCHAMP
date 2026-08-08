@@ -3,6 +3,7 @@ import { HeaderBar } from '../../pages/HeaderBar';
 import { ProductPage } from '../../pages/ProductPage';
 import { CartPage } from '../../pages/CartPage';
 import { PRODUCT_HANDLES } from '../../fixtures/test-data';
+import { recordUrl } from '../../utils/evidence';
 
 /**
  * TP-02-005 — Verify a variant with a changed colour selection is added
@@ -42,6 +43,7 @@ test.describe('FN-02 Product Detail', () => {
 
     await test.step('TC-02-005 #1 — open Noir jacket, select size S', async () => {
       await product.goto(PRODUCT_HANDLES.noirJacket);
+      await recordUrl(page, testInfo, 'Noir jacket PDP');
       await product.selectSize('S');
 
       const [addToCartEnabled, soldOutBadgeCount] = await Promise.all([

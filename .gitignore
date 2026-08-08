@@ -7,3 +7,7 @@ allure-results/
 allure-report/
 .env
 .DS_Store
+docs/*
+!docs/.gitkeep
+cookie-header.txt
+cookies-export.json
