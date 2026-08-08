@@ -1,4 +1,4 @@
-import { Browser, Page, expect } from '@playwright/test';
+import { Browser, Page, TestInfo, expect } from '@playwright/test';
 import { HeaderBar } from '../../pages/HeaderBar';
 import { CatalogPage } from '../../pages/CatalogPage';
 import { ProductPage } from '../../pages/ProductPage';
@@ -145,3 +145,97 @@ export const TEST_CARDS = {
   declined: '2',
   gatewayFailure: '3',
 };
+
+/**
+ * SPR-16 requires the simulation value used to be recorded on every run,
+ * named by the OUTCOME it represents as well as by its bound value, so a
+ * change to the store's testing panel affects the Input column alone and
+ * never an expected result. Keeping the pairing here means a spec cites
+ * the outcome and the value travels with it.
+ */
+export const SIMULATION_VALUES = {
+  approved: { id: 'TD-05-P1', outcome: 'approved payment', value: TEST_CARDS.approved },
+  declined: { id: 'TD-05-P2', outcome: 'declined payment', value: TEST_CARDS.declined },
+  gatewayFailure: { id: 'TD-05-P3', outcome: 'gateway failure', value: TEST_CARDS.gatewayFailure },
+} as const;
+
+/** SPR-16: records which simulation value was used for a submission, by outcome and by value. */
+export async function recordSimulationValue(
+  testInfo: TestInfo,
+  label: string,
+  simulation: (typeof SIMULATION_VALUES)[keyof typeof SIMULATION_VALUES],
+) {
+  await testInfo.attach(`Simulation value used — ${label}`, {
+    body: `${simulation.id} — ${simulation.outcome}\nbound value entered as card number: ${simulation.value}`,
+    contentType: 'text/plain',
+  });
+}
+
+/**
+ * SPR-23: "record which messages were shown, and which were not. A
+ * required field error, a format error, a length error and a credentials
+ * error are distinct outcomes and only one is expected on any given
+ * attempt."
+ *
+ * Recording only the refusal is not enough to discharge that — the report
+ * has to show which message appeared and, where the procedure names
+ * alternatives, which did not. Checkout renders validation text into
+ * live regions (role="alert" / aria-live) rather than into stable
+ * classes, which are hashed per build (see CheckoutPage), so those roles
+ * are the only durable handle.
+ *
+ * `expected` lists the distinct outcomes this step could produce; each is
+ * reported as shown or not shown.
+ */
+export async function recordMessages(
+  page: Page,
+  testInfo: TestInfo,
+  label: string,
+  expected: string[] = [],
+) {
+  const observed = (
+    await page.locator('[role="alert"], [aria-live="polite"], [aria-live="assertive"]').allInnerTexts()
+  )
+    .map((text) => text.trim())
+    .filter(Boolean);
+  const unique = [...new Set(observed)];
+
+  const shown = expected.filter((candidate) =>
+    unique.some((text) => text.toLowerCase().includes(candidate.toLowerCase())),
+  );
+  const notShown = expected.filter((candidate) => !shown.includes(candidate));
+
+  await testInfo.attach(`Messages — ${label}`, {
+    body:
+      `messages shown:\n${unique.length ? unique.map((t) => `  - ${t}`).join('\n') : '  (none displayed)'}\n` +
+      (expected.length
+        ? `\nchecked for these distinct outcomes:\n` +
+          `  shown:     ${shown.length ? shown.join(', ') : '(none)'}\n` +
+          `  NOT shown: ${notShown.length ? notShown.join(', ') : '(none)'}`
+        : ''),
+    contentType: 'text/plain',
+  });
+
+  return { observed: unique, shown, notShown };
+}
+
+/**
+ * SPR-23 also requires the field contents to be recorded after an
+ * over-length entry: where a field caps input, the value is truncated on
+ * entry and the residue may no longer be valid, so truncation must not be
+ * mistaken for the expected refusal.
+ */
+export async function recordFieldContents(
+  testInfo: TestInfo,
+  label: string,
+  entered: string,
+  actual: string,
+) {
+  await testInfo.attach(`Field contents — ${label}`, {
+    body:
+      `entered:  ${entered} (${entered.length} characters)\n` +
+      `retained: ${actual} (${actual.length} characters)\n` +
+      `truncated on entry: ${actual !== entered}`,
+    contentType: 'text/plain',
+  });
+}

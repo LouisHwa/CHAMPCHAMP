@@ -1,6 +1,6 @@
 import { test, expect } from '../../utils/pacedTest';
 import type { Locator } from '@playwright/test';
-import { addProductAndGoToCheckout, fillDeliveryAddress } from './_helpers';
+import { addProductAndGoToCheckout, fillDeliveryAddress, recordMessages } from './_helpers';
 import { recordUrl } from '../../utils/evidence';
 
 /**
@@ -83,6 +83,13 @@ test.describe('FN-05 Checkout', () => {
           body: `entered: ${c.candidate}\nreadback: ${value}\nretained digits: ${retainedDigits}\nvalid: ${valid}\nexpected accept: ${c.shouldAccept}`,
           contentType: 'text/plain',
         });
+        // SPR-23: which message was shown, and which were not.
+        await recordMessages(page, testInfo, c.label, [
+          'Enter a card number',
+          'Card number is not valid',
+          'too short',
+          'too long',
+        ]);
         expect(fullyRetained && valid).toBe(c.shouldAccept);
       });
     }
@@ -155,6 +162,12 @@ test.describe('FN-05 Checkout', () => {
           contentType: 'text/plain',
         });
         const accepted = value.length >= 3 && value.length <= 4;
+        await recordMessages(page, testInfo, c.label, [
+          'Enter a security code',
+          'Security code is not valid',
+          'too short',
+          'too long',
+        ]);
         expect(accepted).toBe(c.shouldAccept);
       });
     }
@@ -213,6 +226,13 @@ test.describe('FN-05 Checkout', () => {
           body: `entered: ${c.candidate}\nreadback: ${value}\nvalid: ${valid}\nexpected accept: ${c.shouldAccept}`,
           contentType: 'text/plain',
         });
+        // SPR-23: which message was shown, and which were not.
+        await recordMessages(page, testInfo, c.label, [
+          'Enter an expiry date',
+          'Enter a valid expiry date',
+          'card has expired',
+          'past',
+        ]);
         expect(fullyRetained && valid).toBe(c.shouldAccept);
       });
     }

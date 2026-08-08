@@ -60,6 +60,16 @@ test.describe('FN-05 Checkout', () => {
       expect(url).toContain('/checkouts/');
       await expect(checkout.emailField).toBeVisible();
       await expect(checkout.signInLink).toBeVisible();
+
+      // The Wrap Up requires the Contact section state OBSERVED in each
+      // entry route to be attached, not merely asserted.
+      await testInfo.attach('Contact section state — guest entry route', {
+        body:
+          `destination: ${url}\n` +
+          `guest email field offered: ${await checkout.emailField.isVisible()}\n` +
+          `"Sign in" prompt offered: ${await checkout.signInLink.isVisible()}`,
+        contentType: 'text/plain',
+      });
     });
 
     await test.step('Reset — return to store, empty cart before the signed-in route', async () => {
@@ -87,6 +97,18 @@ test.describe('FN-05 Checkout', () => {
       // so the guest "Sign in" prompt is not offered the way it is in
       // the guest route above.
       await expect(signedIn.checkout.signInLink).not.toBeVisible();
+
+      await testInfo.attach('Contact section state — signed-in entry route', {
+        body:
+          `destination: ${url}\n` +
+          `"Sign in" prompt offered: ${await signedIn.checkout.signInLink.isVisible()}\n` +
+          `guest email field offered: ${await signedIn.checkout.emailField.isVisible()}\n` +
+          'NOTE: the signed-in state was established from a transplanted session ' +
+          '(playwright/.auth/user.json), not by signing in as a step. ENV-19 requires ' +
+          'sign-in to be performed as a step of the test case — that path is ' +
+          'hCaptcha-protected and could not be automated.',
+        contentType: 'text/plain',
+      });
     });
 
     await test.step('Wrap Up — empty cart and sign out (signed-in context), return home', async () => {

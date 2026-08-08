@@ -6,7 +6,16 @@ import { CartPage } from '../../pages/CartPage';
 import { CartDrawer } from '../../pages/CartDrawer';
 import { CheckoutPage } from '../../pages/CheckoutPage';
 import { ConfirmationPage } from '../../pages/ConfirmationPage';
-import { addProductAndGoToCheckout, fillDeliveryAddress, fillCard, TEST_CARDS, NAME_ON_CARD, BILLING_ADDRESS } from './_helpers';
+import {
+  addProductAndGoToCheckout,
+  fillDeliveryAddress,
+  fillCard,
+  TEST_CARDS,
+  NAME_ON_CARD,
+  BILLING_ADDRESS,
+  SIMULATION_VALUES,
+  recordSimulationValue,
+} from './_helpers';
 import { recordUrl, parseMoney, withFailureEvidence } from '../../utils/evidence';
 import { GUEST_CONTACT, GUEST_IMAP_CONFIG } from '../../fixtures/credentials';
 import { waitForEmail, extractLink } from '../../utils/email';
@@ -104,6 +113,7 @@ test.describe('FN-05 Checkout', () => {
       await test.step('TC-05-008 #5 — approved payment accepted, billing reused from shipping', async () => {
         await expect(checkout.billingAddressCheckbox).toBeChecked();
         await fillCard(checkout, TEST_CARDS.approved, '12/29', '123', NAME_ON_CARD);
+        await recordSimulationValue(testInfo, 'TC-05-008 #5', SIMULATION_VALUES.approved);
       });
 
       await test.step('TC-05-008 #6 — Pay now completes the order', async () => {
@@ -187,6 +197,9 @@ test.describe('FN-05 Checkout', () => {
       });
 
       const tc013 = await addProductAndGoToCheckout(page);
+      // TD-05-E again: a contact address is required to complete a guest
+      // order, and SPR-18 needs it recorded against the confirmation number.
+      await tc013.checkout.emailField.fill(guestEmail);
       await fillDeliveryAddress(page, tc013.checkout, 'United Kingdom');
 
       await test.step('TC-05-013 #1 — Payment section displayed with "Use shipping address as billing address" checked', async () => {
@@ -210,12 +223,27 @@ test.describe('FN-05 Checkout', () => {
         await tc013.checkout.billingField('City').fill(BILLING_ADDRESS.city);
         await tc013.checkout.billingField('Postcode').fill(BILLING_ADDRESS.postcode);
 
+        // SPR-20: record the full set of field values entered BEFORE
+        // submitting. A form that discards its entry and one that rejects it
+        // are different outcomes, and only the recorded values tell them apart.
+        await testInfo.attach('Billing address entered (TD-05-BILL, TC-05-013 #3)', {
+          body:
+            `country:    United Kingdom\n` +
+            `first name: ${BILLING_ADDRESS.firstName}\n` +
+            `last name:  ${BILLING_ADDRESS.lastName}\n` +
+            `address:    ${BILLING_ADDRESS.address1}\n` +
+            `city:       ${BILLING_ADDRESS.city}\n` +
+            `postcode:   ${BILLING_ADDRESS.postcode}`,
+          contentType: 'text/plain',
+        });
+
         await fillCard(tc013.checkout, TEST_CARDS.approved, '12/29', '123', NAME_ON_CARD);
+        await recordSimulationValue(testInfo, 'TC-05-013 #3', SIMULATION_VALUES.approved);
         await tc013.checkout.payNowButton.click();
         await page.waitForURL(/\/(thank[_-]?you|orders)/i, { timeout: 20000 }).catch(() => {});
         const confirmationText = await confirmation.confirmationNumber.textContent().catch(() => null);
         await testInfo.attach('Confirmation number and contact address (TC-05-013)', {
-          body: `confirmation: ${confirmationText ?? '(not found)'}`,
+          body: `confirmation: ${confirmationText ?? '(not found)'}\ncontact address: ${guestEmail}`,
           contentType: 'text/plain',
         });
         await expect(confirmation.thankYouHeading).toBeVisible();

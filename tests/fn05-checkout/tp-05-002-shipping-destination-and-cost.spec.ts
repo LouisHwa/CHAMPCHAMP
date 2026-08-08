@@ -1,6 +1,6 @@
 import { test, expect } from '../../utils/pacedTest';
 import { CartPage } from '../../pages/CartPage';
-import { addProductAndGoToCheckout, fillDeliveryAddress, waitForShippingCost } from './_helpers';
+import { addProductAndGoToCheckout, fillDeliveryAddress, waitForShippingCost, recordMessages } from './_helpers';
 import { recordUrl, parseMoney } from '../../utils/evidence';
 
 /**
@@ -103,6 +103,29 @@ test.describe('FN-05 Checkout', () => {
       await page.waitForTimeout(2000);
       const url = await recordUrl(page, testInfo, 'After incomplete-destination submit attempt');
 
+      // SPR-23: the TC requires the delivery fields required for the order
+      // to be identified as incomplete, and which message was shown to be
+      // recorded alongside those that were not.
+      await recordMessages(page, testInfo, 'TC-05-002 #3 blank destination', [
+        'Enter an address',
+        'Enter a city',
+        'Enter a postcode',
+        'Select a country',
+        'not available',
+      ]);
+
+      // This procedure completes no order (TPS Table 2.5.2). If checkout
+      // proceeded anyway, that is an unplanned order and SPR-18 requires it
+      // identifiable — fail loudly rather than leave it unrecorded.
+      if (!url.includes('/checkouts/')) {
+        await testInfo.attach('UNPLANNED ORDER — TC-05-002 #3', {
+          body:
+            `Checkout left the checkout page on a submission this procedure expects to be ` +
+            `refused, so an order may have been completed.\ndestination: ${url}\n` +
+            `page:\n${await page.locator('main').innerText().catch(() => '(unreadable)')}`,
+          contentType: 'text/plain',
+        });
+      }
       expect.soft(url).toContain('/checkouts/');
     });
 

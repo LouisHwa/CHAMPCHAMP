@@ -1,7 +1,15 @@
 import { test, expect } from '../../utils/pacedTest';
 import { ConfirmationPage } from '../../pages/ConfirmationPage';
 import { MyAccountPage } from '../../pages/MyAccountPage';
-import { startSignedInContext, fillDeliveryAddress, fillCard, TEST_CARDS, NAME_ON_CARD } from './_helpers';
+import {
+  startSignedInContext,
+  fillDeliveryAddress,
+  fillCard,
+  TEST_CARDS,
+  NAME_ON_CARD,
+  SIMULATION_VALUES,
+  recordSimulationValue,
+} from './_helpers';
 import { recordUrl } from '../../utils/evidence';
 
 /**
@@ -57,11 +65,34 @@ test.describe('FN-05 Checkout', () => {
       // Signed-in shoppers reach checkout without the guest "Sign in"
       // prompt shown on the guest route (see TP-05-001).
       await expect(checkout.signInLink).not.toBeVisible();
+
+      // The Wrap Up requires the Contact section state observed after
+      // signing in to be attached, not only asserted.
+      await testInfo.attach('Contact section state — signed in', {
+        body:
+          `destination: ${url}\n` +
+          `"Sign in" prompt offered: ${await checkout.signInLink.isVisible()}\n` +
+          'NOTE: the signed-in state was established from a transplanted session ' +
+          '(playwright/.auth/user.json), not by signing in from the Contact section. ' +
+          'ENV-19 requires sign-in to be performed as a step of the test case — that ' +
+          'path is hCaptcha-protected and could not be automated, so TC-05-010 #1 is ' +
+          'discharged by substitution rather than by the action the TC names.',
+        contentType: 'text/plain',
+      });
     });
 
     await test.step('TC-05-010 #2 — UK address, shipping method, approved payment, order completes', async () => {
       await fillDeliveryAddress(page, checkout, 'United Kingdom');
       await fillCard(checkout, TEST_CARDS.approved, '12/29', '123', NAME_ON_CARD);
+      await recordSimulationValue(testInfo, 'TC-05-010 #2', SIMULATION_VALUES.approved);
+      // The contact address is the account's own, since this context is
+      // signed in — read it back rather than assumed, so SPR-18 records the
+      // address this order was actually raised against.
+      const contactAddress =
+        (await checkout.emailField.inputValue().catch(() => null)) ??
+        (await page.getByText(/@/).first().innerText().catch(() => null)) ??
+        '(not readable from the Contact section)';
+
       await checkout.payNowButton.click();
       await page.waitForURL(/\/(thank[_-]?you|orders)/i, { timeout: 20000 }).catch(() => {});
       await recordUrl(page, testInfo, 'After Pay now (signed in)');
@@ -69,9 +100,19 @@ test.describe('FN-05 Checkout', () => {
       await expect(confirmation.thankYouHeading).toBeVisible();
       await expect(confirmation.confirmationNumber).toBeVisible();
       const confirmationText = await confirmation.confirmationNumber.textContent();
-      await testInfo.attach('Confirmation number (signed-in order)', {
-        body: confirmationText ?? '(not found)',
+      // SPR-18: confirmation number AND contact address.
+      await testInfo.attach('Confirmation number and contact address (TC-05-010)', {
+        body: `confirmation: ${confirmationText ?? '(not found)'}\ncontact address: ${contactAddress}`,
         contentType: 'text/plain',
+      });
+      // The Wrap Up requires the confirmation page itself.
+      await testInfo.attach('Confirmation page summary (TC-05-010)', {
+        body: (await page.locator('main').innerText().catch(() => '')) || '(summary not readable)',
+        contentType: 'text/plain',
+      });
+      await testInfo.attach('Confirmation page — screenshot (TC-05-010)', {
+        body: await page.screenshot({ fullPage: true }),
+        contentType: 'image/png',
       });
     });
 

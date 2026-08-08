@@ -1,7 +1,17 @@
 import { test, expect } from '../../utils/pacedTest';
 import { CartPage } from '../../pages/CartPage';
 import { ConfirmationPage } from '../../pages/ConfirmationPage';
-import { addProductAndGoToCheckout, fillDeliveryAddress, fillCard, TEST_CARDS, NAME_ON_CARD } from './_helpers';
+import {
+  addProductAndGoToCheckout,
+  fillDeliveryAddress,
+  fillCard,
+  TEST_CARDS,
+  NAME_ON_CARD,
+  SIMULATION_VALUES,
+  recordSimulationValue,
+  recordMessages,
+} from './_helpers';
+import { GUEST_CONTACT } from '../../fixtures/credentials';
 import { recordUrl, withFailureEvidence } from '../../utils/evidence';
 
 /**
@@ -36,9 +46,19 @@ test.describe('FN-05 Checkout', () => {
     await withFailureEvidence(page, testInfo, 'TC-05-014 #2 declined payment does not complete', async () => {
       await test.step('TC-05-014 #2 — declined-payment simulation value does not complete the order', async () => {
         await fillCard(checkout, TEST_CARDS.declined, '12/29', '123', NAME_ON_CARD);
+        await recordSimulationValue(testInfo, 'TC-05-014 #2', SIMULATION_VALUES.declined);
         await checkout.payNowButton.click();
         await page.waitForTimeout(3000);
         const url = await recordUrl(page, testInfo, 'After declined payment (TC-05-014)');
+        // The Wrap Up requires the error message displayed for the
+        // declined outcome, and SPR-23 requires which messages were shown
+        // and which were not.
+        await recordMessages(page, testInfo, 'TC-05-014 #2 declined payment', [
+          'declined',
+          'gateway',
+          'expired',
+          'security code',
+        ]);
         expect(url).toContain('/checkouts/');
       });
     });
@@ -68,14 +88,26 @@ test.describe('FN-05 Checkout', () => {
     });
 
     const tc007 = await addProductAndGoToCheckout(page);
+    // TD-05-E. The contact address is required to complete a guest order at
+    // all, and SPR-18 requires it recorded alongside the confirmation
+    // number so orders raised by testing can be identified afterwards.
+    const guestEmail = GUEST_CONTACT.email();
+    await tc007.checkout.emailField.fill(guestEmail);
     await fillDeliveryAddress(page, tc007.checkout, 'United Kingdom');
 
     await withFailureEvidence(page, testInfo, 'TC-05-007 #1 declined payment', async () => {
       await test.step('TC-05-007 #1 — declined-payment simulation value does not complete the order', async () => {
         await fillCard(tc007.checkout, TEST_CARDS.declined, '12/29', '123', NAME_ON_CARD);
+        await recordSimulationValue(testInfo, 'TC-05-007 #1', SIMULATION_VALUES.declined);
         await tc007.checkout.payNowButton.click();
         await page.waitForTimeout(3000);
         const url = await recordUrl(page, testInfo, 'After declined payment (TC-05-007)');
+        await recordMessages(page, testInfo, 'TC-05-007 #1 declined payment', [
+          'declined',
+          'gateway',
+          'expired',
+          'security code',
+        ]);
         expect(url).toContain('/checkouts/');
       });
     });
@@ -83,9 +115,16 @@ test.describe('FN-05 Checkout', () => {
     await withFailureEvidence(page, testInfo, 'TC-05-007 #2 gateway failure', async () => {
       await test.step('TC-05-007 #2 — gateway-failure simulation value does not complete the order', async () => {
         await fillCard(tc007.checkout, TEST_CARDS.gatewayFailure, '12/29', '123', NAME_ON_CARD);
+        await recordSimulationValue(testInfo, 'TC-05-007 #2', SIMULATION_VALUES.gatewayFailure);
         await tc007.checkout.payNowButton.click();
         await page.waitForTimeout(3000);
         const url = await recordUrl(page, testInfo, 'After gateway failure');
+        await recordMessages(page, testInfo, 'TC-05-007 #2 gateway failure', [
+          'gateway',
+          'declined',
+          'try again',
+          'security code',
+        ]);
         expect(url).toContain('/checkouts/');
       });
     });
@@ -93,6 +132,7 @@ test.describe('FN-05 Checkout', () => {
     await withFailureEvidence(page, testInfo, 'TC-05-007 #3 approved payment', async () => {
       await test.step('TC-05-007 #3 — approved-payment simulation value completes the order', async () => {
         await fillCard(tc007.checkout, TEST_CARDS.approved, '12/29', '123', NAME_ON_CARD);
+        await recordSimulationValue(testInfo, 'TC-05-007 #3', SIMULATION_VALUES.approved);
         await tc007.checkout.payNowButton.click();
         await page.waitForURL(/\/(thank[_-]?you|orders)/i, { timeout: 20000 }).catch(() => {});
         await recordUrl(page, testInfo, 'After approved payment');
@@ -100,9 +140,21 @@ test.describe('FN-05 Checkout', () => {
         await expect(confirmation.thankYouHeading).toBeVisible();
         await expect(confirmation.confirmationNumber).toBeVisible();
         const confirmationText = await confirmation.confirmationNumber.textContent();
-        await testInfo.attach('Order confirmation number', {
-          body: confirmationText ?? '(not found)',
+        // SPR-18: the confirmation number AND the contact address used, so
+        // this order can be identified on the live store afterwards.
+        await testInfo.attach('Confirmation number and contact address (TC-05-007)', {
+          body: `confirmation: ${confirmationText ?? '(not found)'}\ncontact address: ${guestEmail}`,
           contentType: 'text/plain',
+        });
+        // The Wrap Up requires the confirmation page summary: items,
+        // shipping method, shipping address, billing address, payment method.
+        await testInfo.attach('Confirmation page summary (TC-05-007)', {
+          body: (await page.locator('main').innerText().catch(() => '')) || '(summary not readable)',
+          contentType: 'text/plain',
+        });
+        await testInfo.attach('Confirmation page — screenshot (TC-05-007)', {
+          body: await page.screenshot({ fullPage: true }),
+          contentType: 'image/png',
         });
       });
     });
