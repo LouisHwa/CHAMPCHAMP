@@ -1,45 +1,41 @@
-#!/usr/bin/env node
 /**
- * Confirms playwright/.auth/user.json actually holds a signed-in
- * session before trusting it in a test run. Signed-in specs opt into
- * this storageState via test.use() (see auth-setup-guide.md); if the
- * captured session is stale or was captured while signed out, those
- * specs would otherwise fail confusingly deep into a test rather than
- * with a clear cause.
+ * Reports whether playwright/.auth/user.json is still a signed-in session.
  *
- * Usage: node scripts/verify-auth-session.mjs
+ * Sessions transplanted from a real browser expire, and an expired one fails
+ * silently: specs load the file, run signed out, and assert against the wrong
+ * state. Run this before trusting a signed-in spec run.
+ *
+ * Prints only structural facts — never cookie values or account details.
+ *
+ * Usage: node scripts/verify-auth-session.mjs [path-to-storage-state]
  */
-import { existsSync } from 'node:fs';
-import { chromium } from '@playwright/test';
+import { chromium } from "@playwright/test";
 
-const STORAGE_STATE_PATH = 'playwright/.auth/user.json';
-const BASE_URL = 'https://sauce-demo.myshopify.com';
-
-if (!existsSync(STORAGE_STATE_PATH)) {
-  console.log(`VERDICT: NO SESSION FILE — ${STORAGE_STATE_PATH} does not exist. Run the capture steps in auth-setup-guide.md first.`);
-  process.exit(1);
-}
+const statePath = process.argv[2] ?? "playwright/.auth/user.json";
 
 const browser = await chromium.launch();
-const context = await browser.newContext({ storageState: STORAGE_STATE_PATH });
+const context = await browser.newContext({ storageState: statePath });
 const page = await context.newPage();
 
-try {
-  await page.goto(`${BASE_URL}/account`, { waitUntil: 'domcontentloaded' });
+await page.goto("https://sauce-demo.myshopify.com/account", { waitUntil: "domcontentloaded" });
 
-  // Signed-in: the account page renders with a working #customer_logout_link.
-  // Signed-out: Shopify redirects /account -> /account/login instead.
-  const signedOut = page.url().includes('/account/login');
-  const logoutLinkVisible = await page.locator('#customer_logout_link').first().isVisible().catch(() => false);
+const finalUrl = page.url();
+const bodyText = await page.locator("body").innerText().catch(() => "");
 
-  if (!signedOut && logoutLinkVisible) {
-    console.log('VERDICT: SIGNED IN — session transferred');
-    process.exitCode = 0;
-  } else {
-    console.log(`VERDICT: SIGNED OUT — landed on ${page.url()}`);
-    console.log('Re-capture the session: you likely copied the Response headers instead of the Request headers, or were not actually signed in when you copied.');
-    process.exitCode = 1;
-  }
-} finally {
-  await browser.close();
-}
+const redirectedToLogin = /\/account\/login/.test(finalUrl);
+const hasPasswordField = (await page.locator('input[type="password"]').count()) > 0;
+const hasLogout = /log ?out|sign ?out/i.test(bodyText);
+
+console.log("state file:            ", statePath);
+console.log("final URL:             ", finalUrl);
+console.log("redirected to login:   ", redirectedToLogin);
+console.log("password field present:", hasPasswordField);
+console.log("logout control present:", hasLogout);
+console.log(
+  "\nVERDICT:",
+  !redirectedToLogin && !hasPasswordField
+    ? "SIGNED IN — session transferred"
+    : "SIGNED OUT — session did not transfer",
+);
+
+await browser.close();

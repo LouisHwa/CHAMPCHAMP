@@ -21,6 +21,15 @@ const isCI = !!process.env.CI;
 export default defineConfig({
     testDir: "./tests",
 
+    // tests/_infra holds checks on the harness itself (e.g. whether the
+    // transplanted signed-in session still works). They discharge no TCS
+    // coverage item, so they must never appear in a compliance run or its
+    // report. testIgnore applies even when a file is named explicitly on the
+    // command line, so it is env-gated rather than absolute:
+    //   PowerShell   $env:INFRA=1; npx playwright test tests/_infra/...
+    //   bash         INFRA=1 npx playwright test tests/_infra/...
+    testIgnore: process.env.INFRA ? [] : "**/_infra/**",
+
     // A-005: no abnormal traffic against the production storefront.
     // Keep concurrency low and never raise this for "speed".
     workers: isCI ? 2 : 2,

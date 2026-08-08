@@ -1,47 +1,87 @@
 import { test, expect } from '@playwright/test';
+import { recordUrl } from '../../utils/evidence';
 
 /**
- * Infra check, not a TCS coverage item — confirms playwright/.auth/user.json
- * is a genuine signed-in session, that signing out is automatable (no
- * captcha on the way out), and that the saved session dies with that
- * sign-out rather than staying reusable. See auth-setup-guide.md.
+ * NOT a test procedure — this verifies the auth infrastructure itself, and
+ * discharges no TCS coverage item. It lives under tests/_infra so it is
+ * obvious it should be excluded from a compliance run.
  *
- * Excluded from the normal suite via the INFRA gate below. Running this
- * WILL invalidate your captured session — re-capture afterwards.
+ * The store's login form is hCaptcha-protected and rejects any browser
+ * Playwright drives (confirmed against bundled Chromium and real Chrome), so
+ * the signed-in session is established by a human in a normal browser and
+ * transplanted via playwright/.auth/user.json. This checks that transplant
+ * actually works before any signed-in procedure depends on it.
  *
- *   $env:INFRA=1; npx playwright test tests/_infra/auth-session.spec.ts --project=chromium
- *   $env:INFRA=""
+ * It also answers a live test-design question: whether a transplanted
+ * session survives a sign-out. TC-04-013 #3 and TC-04-011 #4 require signing
+ * back in after signing out, and if the saved state dies with the sign-out,
+ * reloading it cannot stand in for that step.
+ *
+ * DESTRUCTIVE: signing out invalidates the captured session, so
+ * user.json must be re-captured after running this.
  */
-const STORAGE_STATE_PATH = 'playwright/.auth/user.json';
+test.use({ storageState: 'playwright/.auth/user.json' });
 
-test.use({ storageState: STORAGE_STATE_PATH });
+test.describe('Auth infrastructure (not a TP)', () => {
+  test('transplanted session starts signed in, and sign-out ends it', async ({ page, browser }, testInfo) => {
+    // #customer_logout_link appears twice (header and sidebar). Duplicate
+    // entry points are recorded as out of scope by SPR-06, so this scopes to
+    // the first rather than treating the duplication as a defect.
+    const logOutLink = page.locator('#customer_logout_link').first();
+    const passwordField = page.locator('input[type="password"]');
 
-test.describe('_infra', () => {
-  test('captured session signs out cleanly and cannot be reused afterwards', async ({ page, browser }) => {
-    test.skip(!process.env.INFRA, 'Set INFRA=1 to run this infra-only check (see auth-setup-guide.md). Excluded from the normal suite — it discharges no TCS coverage item.');
-
-    await test.step('the captured session starts signed in', async () => {
+    await test.step('Start state — the transplanted session is signed in', async () => {
       await page.goto('/account', { waitUntil: 'domcontentloaded' });
-      expect(page.url()).not.toContain('/account/login');
-      await expect(page.locator('#customer_logout_link').first()).toBeVisible();
+      const url = await recordUrl(page, testInfo, 'account page with transplanted session');
+
+      await expect(logOutLink).toBeVisible();
+      await expect(passwordField).toHaveCount(0);
+
+      await testInfo.attach('Signed-in start state', {
+        body: `destination: ${url}\nlog out control visible: true\npassword field present: false`,
+        contentType: 'text/plain',
+      });
     });
 
-    await test.step('signing out is automatable — no captcha on the way out', async () => {
-      await page.locator('#customer_logout_link').first().click();
-      await page.waitForLoadState('domcontentloaded');
-      await expect(page.locator('#customer_login_link').first()).toBeVisible();
+    await test.step('Sign out — the session ends without touching the login form', async () => {
+      await logOutLink.click();
+      await page.waitForURL((u) => !u.pathname.startsWith('/account') || u.pathname === '/account/login');
+      const url = await recordUrl(page, testInfo, 'after sign out');
+
+      await page.goto('/account', { waitUntil: 'domcontentloaded' });
+      const signedOut = (await passwordField.count()) > 0 || page.url().includes('/account/login');
+
+      await testInfo.attach('Signed-out state', {
+        body: `destination after sign out: ${url}\n/account now shows a login form: ${signedOut}`,
+        contentType: 'text/plain',
+      });
+      expect(signedOut).toBe(true);
     });
 
-    await test.step('the saved session file cannot be reused after that sign-out', async () => {
-      const staleContext = await browser.newContext({ storageState: STORAGE_STATE_PATH });
-      const stalePage = await staleContext.newPage();
-      await stalePage.goto('/account', { waitUntil: 'domcontentloaded' });
+    await test.step('Saved session after sign-out — can it be reused for a second sign-in?', async () => {
+      // A fresh context loading the SAME file. If this still comes up signed
+      // in, the saved cookie outlived the sign-out; if it does not, then
+      // TC-04-013 #3 / TC-04-011 #4 cannot be satisfied by reloading it.
+      const secondContext = await browser.newContext({ storageState: 'playwright/.auth/user.json' });
+      const secondPage = await secondContext.newPage();
+      await secondPage.goto('https://sauce-demo.myshopify.com/account', { waitUntil: 'domcontentloaded' });
 
-      const stillSignedOut = stalePage.url().includes('/account/login')
-        || !(await stalePage.locator('#customer_logout_link').first().isVisible().catch(() => false));
-      await staleContext.close();
+      const stillSignedIn =
+        (await secondPage.locator('#customer_logout_link').count()) > 0 &&
+        (await secondPage.locator('input[type="password"]').count()) === 0;
 
-      expect(stillSignedOut).toBe(true);
+      await testInfo.attach('Reusing the saved session after sign-out', {
+        body:
+          `destination: ${secondPage.url()}\n` +
+          `saved session still signed in: ${stillSignedIn}\n\n` +
+          (stillSignedIn
+            ? 'The saved cookie outlived the sign-out.'
+            : 'The saved cookie died with the sign-out, so it cannot stand in for a second sign-in ' +
+              '(TC-04-013 #3, TC-04-011 #4). Those steps need the login form, which is captcha-protected.'),
+        contentType: 'text/plain',
+      });
+
+      await secondContext.close();
     });
   });
 });
