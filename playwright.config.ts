@@ -16,12 +16,17 @@ export default defineConfig({
     testDir: "./tests",
 
     // A-005: no abnormal traffic against the production storefront.
-    // Keep concurrency low and never raise this for "speed".
-    workers: isCI ? 2 : 2,
+    // Running in parallel is what actually trips Cloudflare fastest
+    // (confirmed 7 August), so this is 1 everywhere, CI included — never
+    // raise it for "speed".
+    workers: 1,
     fullyParallel: false,
 
     forbidOnly: isCI,
-    retries: isCI ? 1 : 0,
+    // A retry immediately re-hits the live site right after a failure
+    // that may itself have been Cloudflare — no benefit, just more
+    // traffic. Re-run manually (paced) instead.
+    retries: 0,
     timeout: 30_000,
     expect: { timeout: 7_000 },
 
@@ -43,6 +48,16 @@ export default defineConfig({
         trace: "retain-on-failure",
         screenshot: "only-on-failure",
         video: "retain-on-failure",
+
+        // Cloudflare served an interstitial during a signed-out FN-04 batch
+        // on 7 August — automating a live, Cloudflare-protected site at
+        // machine speed reads as bot traffic. Pacing every action to
+        // roughly how a human actually clicks/types (not machine-instant)
+        // is the lecturer-confirmed mitigation, so this is on by default
+        // rather than opt-in. Override for a specific run if needed:
+        //   PowerShell   $env:SLOWMO=0; npx playwright test ...
+        //   bash         SLOWMO=0 npx playwright test ...
+        launchOptions: { slowMo: Number(process.env.SLOWMO ?? 600) },
 
         actionTimeout: 10_000,
         navigationTimeout: 20_000,
