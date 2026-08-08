@@ -4,7 +4,7 @@ import { HeaderBar } from '../../pages/HeaderBar';
 import { ProductPage } from '../../pages/ProductPage';
 import { CartPage } from '../../pages/CartPage';
 import { CART_TEST_DATA } from '../../fixtures/test-data';
-import { withFailureEvidence } from '../../utils/evidence';
+import { captureCrashEvidence, withFailureEvidence } from '../../utils/evidence';
 
 /**
  * TP-04-002 — Verify the cart line quantity is validated against
@@ -53,15 +53,31 @@ test.describe('FN-04 Cart Management', () => {
       target.on('crash', onCrash);
       try {
         await target.locator('input[name="updates[]"]').first().fill(qty, { timeout: 10_000 });
+
+        // SPR-14 evidence: show the value actually sitting in the field
+        // before it is committed. Without this the report only ever shows
+        // the aftermath, never the input that caused it.
+        await testInfo
+          .attach(`Quantity ${qty} — entered, before commit`, {
+            body: await target.locator('#cart').screenshot({ timeout: 5_000 }),
+            contentType: 'image/png',
+          })
+          .catch(() => {});
+
         await target.locator('#update').click({ timeout: 10_000 });
         await target.waitForTimeout(2_000);
         if (target.isClosed() || crashed) {
+          await captureCrashEvidence(target, testInfo, `Quantity ${qty} — after commit (crashed)`);
           return { responsive: false, detail: 'page crashed or closed after commit' };
         }
         await target.goto('https://sauce-demo.myshopify.com/cart', { waitUntil: 'domcontentloaded', timeout: 10_000 });
         const rowCount = await target.locator('#cart .row').count();
         return { responsive: true, detail: `page responsive; #cart .row count now ${rowCount}` };
       } catch (error) {
+        // The page stopped responding mid-interaction. Capture whatever
+        // state it is in — a rendered error page, a frozen cart, or a
+        // screenshot that cannot be taken at all.
+        await captureCrashEvidence(target, testInfo, `Quantity ${qty} — unresponsive`);
         return { responsive: false, detail: `error during interaction: ${(error as Error).message}` };
       } finally {
         target.off('crash', onCrash);

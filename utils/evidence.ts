@@ -57,6 +57,66 @@ export async function settleForEvidence(page: Page, timeout = 5_000) {
     .catch(() => {});
 }
 
+/** Resolves to `fallback` if `promise` has not settled within `ms`, for probing a page that may be hung. */
+async function withinTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return Promise.race([
+    promise.catch(() => fallback),
+    new Promise<T>((resolve) => setTimeout(() => resolve(fallback), ms)),
+  ]);
+}
+
+/**
+ * SPR-14: record whether the page remains responsive after a step that may
+ * crash it, and capture its state if it fails.
+ *
+ * A hung page cannot be evidenced the usual way. Playwright's automatic
+ * screenshot is keyed to the test's final status, which test.fail() reports
+ * as "passed", so it never fires; and page.screenshot() on a dead page hangs
+ * as well. Everything here is therefore bounded by its own timeout, and a
+ * capture that fails is recorded as a result rather than swallowed — a
+ * screenshot that cannot be taken is itself evidence the page stopped
+ * responding, and Chromium's own crash page ("Aw, Snap") screenshots fine,
+ * which is usually the picture worth having.
+ */
+export async function captureCrashEvidence(
+  page: Page,
+  testInfo: TestInfo,
+  label: string,
+  timeout = 5_000,
+): Promise<void> {
+  const closed = page.isClosed();
+  let screenshotCaptured = false;
+
+  if (!closed) {
+    try {
+      await testInfo.attach(`Screenshot — ${label}`, {
+        body: await page.screenshot({ timeout }),
+        contentType: 'image/png',
+      });
+      screenshotCaptured = true;
+    } catch {
+      // Deliberately swallowed: reported below as evidence in its own right.
+    }
+  }
+
+  const readyState = closed
+    ? '(page closed)'
+    : await withinTimeout(
+        page.evaluate(() => document.readyState),
+        timeout,
+        '(no response within timeout — page unresponsive)',
+      );
+
+  await testInfo.attach(`Page state — ${label}`, {
+    body:
+      `page closed: ${closed}\n` +
+      `screenshot captured: ${screenshotCaptured}${screenshotCaptured ? '' : ' (capture itself timed out — page unresponsive)'}\n` +
+      `document.readyState: ${readyState}\n` +
+      `URL: ${closed ? '(unavailable)' : page.url()}`,
+    contentType: 'text/plain',
+  });
+}
+
 /** Parses "£45.00" style money text into a plain number (45). Returns NaN if no amount is found. */
 export function parseMoney(text: string | null): number {
   if (!text) return NaN;
