@@ -4,12 +4,22 @@ import { CatalogPage } from '../../pages/CatalogPage';
 import { ProductPage } from '../../pages/ProductPage';
 import { CartPage } from '../../pages/CartPage';
 import { PRODUCTS, PRODUCT_HANDLES } from '../../fixtures/test-data';
-import { recordUrl } from '../../utils/evidence';
+import { recordUrl, withFailureEvidence } from '../../utils/evidence';
 
 /**
  * TP-02-004 — Verify a variant with a size selected and stock available
  * is added to the cart, and the page URL matches the product displayed.
- * Covers TC-02-004 (#1 to #4).
+ * Covers TC-02-004 (#1 to #5) — #5 added by the refined TPS FN-02,
+ * checking URL correspondence for a second product.
+ *
+ * EXPECTED TO FAIL, BY DESIGN, on step #5 only — marked via test.fail()
+ * below. Confirmed defect DEF-F2-02: "Black heels" shows the
+ * flower-print-jeans handle in its URL (PRODUCT_HANDLES.blackHeels is
+ * already 'flower-print-jeans' in fixtures/test-data.ts, capturing this
+ * exact mismatch). Steps #1-4 (Noir Jacket) have no known defect and
+ * stay hard-asserted; test.fail() applies to the whole test, so step
+ * #5's failure is what determines the overall result even though #1-4
+ * genuinely pass.
  *
  * Uses CartPage (a real navigation), not CartDrawer, for line counts —
  * CartDrawer's #drawer is a stale, server-rendered snapshot from page
@@ -18,6 +28,8 @@ import { recordUrl } from '../../utils/evidence';
  */
 test.describe('FN-02 Product Detail', () => {
   test('TP-02-004 successful cart addition and URL correspondence', async ({ page }, testInfo) => {
+    test.fail(true, 'Confirmed defect DEF-F2-02: Black Heels shows the flower-print-jeans handle in its URL.');
+
     const header = new HeaderBar(page);
     const catalog = new CatalogPage(page);
     const product = new ProductPage(page);
@@ -25,6 +37,7 @@ test.describe('FN-02 Product Detail', () => {
 
     let baselineLineCount = 0;
 
+    await withFailureEvidence(page, testInfo, async () => {
     await test.step('Set Up — confirm empty cart, baseline line count', async () => {
       await cart.goto();
       baselineLineCount = await cart.lineCount();
@@ -111,12 +124,33 @@ test.describe('FN-02 Product Detail', () => {
       expect(lineDescription).toContain('Blue');
     });
 
+    await test.step('TC-02-004 #5 — Black Heels URL correspondence (DEF-F2-02)', async () => {
+      await header.gotoHome();
+      await catalog.goto();
+      await catalog.productLink(PRODUCTS.blackHeels).click();
+
+      const name = await product.title.textContent();
+      const url = await recordUrl(page, testInfo, 'Black Heels PDP');
+      await testInfo.attach('Black Heels — product name / URL', {
+        body: `name: ${name?.trim()}\nurl: ${url}\nactual handle in URL (confirmed buggy, DEF-F2-02): ${PRODUCT_HANDLES.blackHeels}`,
+        contentType: 'text/plain',
+      });
+
+      // Expected to fail — DEF-F2-02: the URL carries the
+      // flower-print-jeans handle (PRODUCT_HANDLES.blackHeels — the
+      // confirmed ACTUAL, buggy value) instead of one corresponding to
+      // "Black heels", so the assertion checks against the handle a
+      // correct URL should have, not the already-buggy constant.
+      expect.soft(url, 'TC-02-004 #5 expects the URL to correspond to the product displayed.').toContain('black-heels');
+    });
+
     await test.step('Wrap Up — empty the cart, return to the store home page', async () => {
       const finalLineCount = await cart.lineCount();
       for (let i = finalLineCount - 1; i >= baselineLineCount; i--) {
         await cart.removeLine(i).click();
       }
       await header.gotoHome();
+    });
     });
   });
 });
