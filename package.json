@@ -1,0 +1,22 @@
+{
+  "name": "tdc2.0",
+  "version": "1.0.0",
+  "description": "Automation testing for Saucedemo",
+  "main": "index.js",
+  "scripts": {},
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LouisHwa/TDC2.0.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/LouisHwa/TDC2.0/issues"
+  },
+  "homepage": "https://github.com/LouisHwa/TDC2.0#readme",
+  "devDependencies": {
+    "@playwright/test": "^1.61.1",
+    "@types/node": "^26.0.1"
+  }
+}
