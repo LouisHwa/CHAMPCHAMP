@@ -9,21 +9,30 @@ import { test as base, expect } from '@playwright/test';
  * between one test ending and the next one starting.
  *
  * Every spec file must import `test`/`expect` from here instead of
- * directly from `@playwright/test` for this to take effect — Playwright
- * hooks only apply to tests declared through the same `test` object
- * they're registered on.
+ * directly from `@playwright/test`, or that file's tests get no pause.
+ *
+ * Implemented as an auto fixture, NOT a module-scope `test.afterEach`.
+ * A bare `test.afterEach()` here would attach to whichever spec file
+ * happened to trigger this module's evaluation — Node caches the module,
+ * so with workers=1 every later spec file in the same run silently got
+ * no pause at all. An auto fixture is per-test and applies everywhere.
  *
  * Override with PACE_BETWEEN_TESTS_MS for a specific run if needed:
  *   PowerShell   $env:PACE_BETWEEN_TESTS_MS=0; npx playwright test ...
  *   bash         PACE_BETWEEN_TESTS_MS=0 npx playwright test ...
  */
-export const test = base;
-export { expect };
-
 const PACE_BETWEEN_TESTS_MS = Number(process.env.PACE_BETWEEN_TESTS_MS ?? 4000);
 
-test.afterEach(async () => {
-  if (PACE_BETWEEN_TESTS_MS > 0) {
-    await new Promise((resolve) => setTimeout(resolve, PACE_BETWEEN_TESTS_MS));
-  }
+export const test = base.extend<{ paceBetweenTests: void }>({
+  paceBetweenTests: [
+    async ({}, use) => {
+      await use();
+      if (PACE_BETWEEN_TESTS_MS > 0) {
+        await new Promise((resolve) => setTimeout(resolve, PACE_BETWEEN_TESTS_MS));
+      }
+    },
+    { auto: true },
+  ],
 });
+
+export { expect };

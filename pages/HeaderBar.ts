@@ -18,6 +18,7 @@ export class HeaderBar {
   readonly searchLink: Locator;
   readonly aboutUsLink: Locator;
   readonly logInLink: Locator;
+  readonly logOutLink: Locator;
   readonly signUpLink: Locator;
   readonly cartToggle: Locator;
   readonly cartCount: Locator;
@@ -36,6 +37,9 @@ export class HeaderBar {
     this.searchLink = header.getByRole('link', { name: 'Search', exact: true });
     this.aboutUsLink = header.getByRole('link', { name: 'About Us', exact: true });
     this.logInLink = header.locator('#customer_login_link');
+    // Shown in place of logInLink once a session exists — the header's own
+    // signed-in/signed-out indicator, which is what TC-07-015 reads.
+    this.logOutLink = header.locator('#customer_logout_link');
     this.signUpLink = header.locator('#customer_register_link');
 
     this.cartToggle = page.locator('#minicart a.toggle-drawer.cart.desktop');

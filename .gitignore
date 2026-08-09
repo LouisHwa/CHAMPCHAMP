@@ -5,5 +5,19 @@ blob-report/
 playwright/.cache/
 allure-results/
 allure-report/
+playwright/.auth/*
+!playwright/.auth/.gitkeep
 .env
 .DS_Store
+
+# Raw cookie captures taken while transplanting a signed-in session.
+# These hold live session values — convert them, then delete them.
+cookie-header.txt
+cookies-export.json
+cookies.json
+
+# Local reference material: the test basis documents (TCS/TPS/TDS) and any
+# working notes. Distributed through the team's own channel, not git. The
+# .gitkeep is retained so the directory exists on a fresh clone.
+docs/*
+!docs/.gitkeep
