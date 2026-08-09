@@ -1,3 +1,4 @@
+import "dotenv/config";
 import { defineConfig, devices } from "@playwright/test";
 
 /**
@@ -7,6 +8,11 @@ import { defineConfig, devices } from "@playwright/test";
  * Evidence settings below implement the Special Procedural Requirements:
  *   SPR-01  destination URL recorded at every navigation  -> trace
  *   SPR-04  screenshot + URL captured on any failed step  -> screenshot + trace
+ *
+ * "dotenv/config" loads .env (gitignored) for the TEST_ACCOUNT and IMAP
+ * variables — see .env.example. In CI these come from GitHub Actions
+ * Secrets instead; dotenv silently no-ops if .env doesn't exist, so
+ * this is safe either way.
  */
 // run this first 'npm install --save-dev allure-playwright'
 
@@ -14,6 +20,15 @@ const isCI = !!process.env.CI;
 
 export default defineConfig({
     testDir: "./tests",
+
+    // tests/_infra holds checks on the harness itself (e.g. whether the
+    // transplanted signed-in session still works). They discharge no TCS
+    // coverage item, so they must never appear in a compliance run or its
+    // report. testIgnore applies even when a file is named explicitly on the
+    // command line, so it is env-gated rather than absolute:
+    //   PowerShell   $env:INFRA=1; npx playwright test tests/_infra/...
+    //   bash         INFRA=1 npx playwright test tests/_infra/...
+    testIgnore: process.env.INFRA ? [] : "**/_infra/**",
 
     // A-005: no abnormal traffic against the production storefront.
     // Running in parallel is what actually trips Cloudflare fastest
@@ -27,7 +42,14 @@ export default defineConfig({
     // that may itself have been Cloudflare — no benefit, just more
     // traffic. Re-run manually (paced) instead.
     retries: 0,
-    timeout: 30_000,
+    // 30s was the default before pacing was introduced, and it collides
+    // with slowMo: 600 — every action now carries an extra 0.6s, so a
+    // procedure with ~50 actions spends 30s on pacing alone. TP-04-003
+    // timed out at exactly 30s for this reason on 8 August, which
+    // test.fail() then reported as an expected failure. Specs that already
+    // set their own budget (e.g. this branch's TP-06-001/005 at 240s) are
+    // unaffected; this brings everything else in line with them.
+    timeout: 90_000,
     expect: { timeout: 7_000 },
 
     reporter: [
