@@ -54,7 +54,14 @@ export default defineConfig({
     // that may itself have been Cloudflare — no benefit, just more
     // traffic. Re-run manually (paced) instead.
     retries: 0,
-    timeout: 30_000,
+    // 30s was the default before pacing was introduced, and it collides
+    // with slowMo: 600 — every action now carries an extra 0.6s, so a
+    // procedure with ~50 actions spends 30s on pacing alone. TP-04-003
+    // timed out at exactly 30s for this reason on 8 August, which
+    // test.fail() then reported as an expected failure. Specs that already
+    // set their own budget (TP-04-001/002 at 90s, TP-04-006 at 120s) are
+    // unaffected; this brings everything else in line with them.
+    timeout: 90_000,
     expect: { timeout: 7_000 },
 
     reporter: [
