@@ -1,9 +1,9 @@
-import { test, expect } from '@playwright/test';
-import { HeaderBar } from '../../pages/HeaderBar';
-import { ProductPage } from '../../pages/ProductPage';
-import { CartPage } from '../../pages/CartPage';
-import { PRODUCT_HANDLES } from '../../fixtures/test-data';
-import { recordUrl } from '../../utils/evidence';
+import { test, expect } from "../../utils/pacedTest";
+import { HeaderBar } from "../../pages/HeaderBar";
+import { ProductPage } from "../../pages/ProductPage";
+import { CartPage } from "../../pages/CartPage";
+import { PRODUCT_HANDLES } from "../../fixtures/test-data";
+import { recordUrl } from "../../utils/evidence";
 
 /**
  * TP-02-003 — Verify cart insertion is blocked with an inline validation
@@ -39,98 +39,114 @@ import { recordUrl } from '../../utils/evidence';
  * it here would silently show the pre-click count and produce a false
  * pass on exactly the behaviour this test exists to catch.
  */
-test.describe('FN-02 Product Detail', () => {
-  test('TP-02-003 missing size selection validation', async ({ page }, testInfo) => {
-    test.fail(true, 'Confirmed defect: Size/Colour auto-select on load, so Add to Cart is never blocked. See file-level comment / DEF-F2-xx.');
+test.describe("FN-02 Product Detail", () => {
+    test("TP-02-003 missing size selection validation", async ({
+        page,
+    }, testInfo) => {
+        test.fail(
+            true,
+            "Confirmed defect: Size/Colour auto-select on load, so Add to Cart is never blocked.",
+        );
 
-    const header = new HeaderBar(page);
-    const product = new ProductPage(page);
-    const cart = new CartPage(page);
+        const header = new HeaderBar(page);
+        const product = new ProductPage(page);
+        const cart = new CartPage(page);
 
-    let baselineLineCount = 0;
+        let baselineLineCount = 0;
 
-    await test.step('Set Up — confirm empty cart, baseline line count', async () => {
-      await cart.goto();
-      baselineLineCount = await cart.lineCount();
-      await testInfo.attach('Baseline cart line count (expected 0, per ENV-08)', {
-        body: String(baselineLineCount),
-        contentType: 'text/plain',
-      });
-      // The attachment above claimed an expectation the code never checked.
-      // The TPS Set Up requires the cart to be CONFIRMED empty: ENV-08 is a
-      // precondition, so a non-empty cart invalidates the run.
-      expect(baselineLineCount).toBe(0);
+        await test.step("Set Up — confirm empty cart, baseline line count", async () => {
+            await cart.goto();
+            baselineLineCount = await cart.lineCount();
+            await testInfo.attach(
+                "Baseline cart line count (expected 0, per ENV-08)",
+                {
+                    body: String(baselineLineCount),
+                    contentType: "text/plain",
+                },
+            );
+            // The attachment above claimed an expectation the code never checked.
+            // The TPS Set Up requires the cart to be CONFIRMED empty: ENV-08 is a
+            // precondition, so a non-empty cart invalidates the run.
+            expect(baselineLineCount).toBe(0);
+        });
+
+        await test.step("TC-02-003 #1 — Size dropdown, Add to Cart and Sold Out state on load", async () => {
+            await product.goto(PRODUCT_HANDLES.noirJacket);
+            await recordUrl(page, testInfo, "Noir jacket PDP");
+
+            // TPS #1 asks for three readings on load, not one: the Size dropdown
+            // value, whether Add to Cart is enabled, and whether a Sold Out badge
+            // is shown. Taken without operating any variant control.
+            const [sizeOnLoad, addToCartEnabled, soldOutBadgeCount] =
+                await Promise.all([
+                    product.sizeSelect.inputValue(),
+                    product.addToCartButton.isEnabled(),
+                    page.locator(".sold-out").count(),
+                ]);
+
+            await testInfo.attach("Variant controls state on page load", {
+                body:
+                    `Size dropdown: ${sizeOnLoad === "" ? "(no selection)" : sizeOnLoad}\n` +
+                    `Add to Cart enabled: ${addToCartEnabled}\n` +
+                    `Sold Out badge present: ${soldOutBadgeCount > 0}`,
+                contentType: "text/plain",
+            });
+        });
+
+        await test.step("TC-02-003 #2 — click Add to Cart without touching Size", async () => {
+            const cartAddResponse = page
+                .waitForResponse((res) => res.url().includes("/cart/add"), {
+                    timeout: 10_000,
+                })
+                .catch(() => null);
+            await product.addToCartButton.click();
+            const response = await cartAddResponse;
+
+            const possibleMessage = page.locator(
+                '#buy .error, #buy .message, #buy .alert, #buy [class*="error"]',
+            );
+            const messageText =
+                (await possibleMessage.count()) > 0
+                    ? await possibleMessage.first().innerText()
+                    : null;
+
+            await testInfo.attach("System response after Add to Cart click", {
+                body:
+                    `/cart/add response: ${response ? response.status() : "not observed within 10s"}\n` +
+                    `inline message: ${messageText ?? "none found (no element matching a generic error/message/alert pattern near the control)"}`,
+                contentType: "text/plain",
+            });
+            await testInfo.attach("System response — screenshot", {
+                body: await page.locator("#buy").screenshot(),
+                contentType: "image/png",
+            });
+        });
+
+        await test.step("TC-02-003 #3 — cart line count vs baseline", async () => {
+            await cart.goto();
+            const closingLineCount = await cart.lineCount();
+            await testInfo.attach("Closing cart line count", {
+                body: `baseline: ${baselineLineCount}\nclosing:  ${closingLineCount}`,
+                contentType: "text/plain",
+            });
+
+            // Restore baseline state before asserting, so cleanup happens
+            // regardless of whether the assertion below passes or fails.
+            for (let i = closingLineCount - 1; i >= baselineLineCount; i--) {
+                await cart.removeLine(i).click();
+            }
+
+            // This assertion is expected to fail — see the file-level comment.
+            expect(
+                closingLineCount,
+                "TC-02-003 expects Add to Cart to be blocked when no size is explicitly selected. " +
+                    'Confirmed: this theme auto-selects Size="S"/Colour="Blue" on page load, so the ' +
+                    "click succeeds and a line is added instead.",
+            ).toBe(baselineLineCount);
+        });
+
+        await test.step("Wrap Up — return to the store home page", async () => {
+            await header.gotoHome();
+        });
     });
-
-    await test.step('TC-02-003 #1 — Size dropdown, Add to Cart and Sold Out state on load', async () => {
-      await product.goto(PRODUCT_HANDLES.noirJacket);
-      await recordUrl(page, testInfo, 'Noir jacket PDP');
-
-      // TPS #1 asks for three readings on load, not one: the Size dropdown
-      // value, whether Add to Cart is enabled, and whether a Sold Out badge
-      // is shown. Taken without operating any variant control.
-      const [sizeOnLoad, addToCartEnabled, soldOutBadgeCount] = await Promise.all([
-        product.sizeSelect.inputValue(),
-        product.addToCartButton.isEnabled(),
-        page.locator('.sold-out').count(),
-      ]);
-
-      await testInfo.attach('Variant controls state on page load', {
-        body:
-          `Size dropdown: ${sizeOnLoad === '' ? '(no selection)' : sizeOnLoad}\n` +
-          `Add to Cart enabled: ${addToCartEnabled}\n` +
-          `Sold Out badge present: ${soldOutBadgeCount > 0}`,
-        contentType: 'text/plain',
-      });
-    });
-
-    await test.step('TC-02-003 #2 — click Add to Cart without touching Size', async () => {
-      const cartAddResponse = page
-        .waitForResponse((res) => res.url().includes('/cart/add'), { timeout: 10_000 })
-        .catch(() => null);
-      await product.addToCartButton.click();
-      const response = await cartAddResponse;
-
-      const possibleMessage = page.locator('#buy .error, #buy .message, #buy .alert, #buy [class*="error"]');
-      const messageText = (await possibleMessage.count()) > 0 ? await possibleMessage.first().innerText() : null;
-
-      await testInfo.attach('System response after Add to Cart click', {
-        body: `/cart/add response: ${response ? response.status() : 'not observed within 10s'}\n` +
-          `inline message: ${messageText ?? 'none found (no element matching a generic error/message/alert pattern near the control)'}`,
-        contentType: 'text/plain',
-      });
-      await testInfo.attach('System response — screenshot', {
-        body: await page.locator('#buy').screenshot(),
-        contentType: 'image/png',
-      });
-    });
-
-    await test.step('TC-02-003 #3 — cart line count vs baseline', async () => {
-      await cart.goto();
-      const closingLineCount = await cart.lineCount();
-      await testInfo.attach('Closing cart line count', {
-        body: `baseline: ${baselineLineCount}\nclosing:  ${closingLineCount}`,
-        contentType: 'text/plain',
-      });
-
-      // Restore baseline state before asserting, so cleanup happens
-      // regardless of whether the assertion below passes or fails.
-      for (let i = closingLineCount - 1; i >= baselineLineCount; i--) {
-        await cart.removeLine(i).click();
-      }
-
-      // This assertion is expected to fail — see the file-level comment.
-      expect(
-        closingLineCount,
-        'TC-02-003 expects Add to Cart to be blocked when no size is explicitly selected. ' +
-          'Confirmed: this theme auto-selects Size="S"/Colour="Blue" on page load, so the ' +
-          'click succeeds and a line is added instead. Candidate defect — needs a DEF-F2-xx ' +
-          'entry in the defect log.',
-      ).toBe(baselineLineCount);
-    });
-
-    await test.step('Wrap Up — return to the store home page', async () => {
-      await header.gotoHome();
-    });
-  });
 });
