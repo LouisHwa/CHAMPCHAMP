@@ -3,10 +3,10 @@ test-results/
 playwright-report/
 blob-report/
 playwright/.cache/
-allure-results/
-allure-report/
 playwright/.auth/*
 !playwright/.auth/.gitkeep
+allure-results/
+allure-report/
 .env
 .DS_Store
 
@@ -17,7 +17,8 @@ cookies-export.json
 cookies.json
 
 # Local reference material: the test basis documents (TCS/TPS/TDS) and any
-# working notes. Distributed through the team's own channel, not git. The
-# .gitkeep is retained so the directory exists on a fresh clone.
+# working notes. Kept out of the repo entirely so controlled documents are
+# distributed through the team's own channel rather than through git. The
+# .gitkeep is retained so the directory still exists on a fresh clone.
 docs/*
 !docs/.gitkeep
