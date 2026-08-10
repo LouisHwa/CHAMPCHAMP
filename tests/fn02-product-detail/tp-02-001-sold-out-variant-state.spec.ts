@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from '../../utils/pacedTest';
 import { HeaderBar } from '../../pages/HeaderBar';
 import { CatalogPage } from '../../pages/CatalogPage';
 import { ProductPage } from '../../pages/ProductPage';
@@ -27,14 +27,22 @@ test.describe('FN-02 Product Detail', () => {
 
     let baselineLineCount = 0;
 
-    await test.step('Set Up — baseline cart line count', async () => {
+    await test.step('Set Up — confirm empty cart, baseline line count', async () => {
       await header.gotoHome();
+      // CartDrawer is safe in this procedure specifically: nothing is ever
+      // added to the cart here, so the drawer's stale server-rendered
+      // snapshot cannot lag behind an AJAX add. Do not copy this into a
+      // spec that adds to the cart — use CartPage there (see CartDrawer.ts).
       await cart.open();
       baselineLineCount = await cart.lineCount();
-      await testInfo.attach('Baseline cart line count', {
+      await testInfo.attach('Baseline cart line count (expected 0, per ENV-08)', {
         body: String(baselineLineCount),
         contentType: 'text/plain',
       });
+      // The TPS Set Up requires the cart to be CONFIRMED empty, not merely
+      // recorded — ENV-08 is a precondition, so a non-empty cart invalidates
+      // the run rather than just shifting the baseline.
+      expect(baselineLineCount).toBe(0);
       await header.gotoHome();
     });
 

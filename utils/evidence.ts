@@ -32,3 +32,28 @@ export async function captureFailureEvidence(
     contentType: 'image/png',
   });
 }
+
+/**
+ * Wraps a test.fail()-marked test body so a real, unrelated failure (e.g.
+ * a Cloudflare interstitial instead of the expected defect) still leaves
+ * evidence behind. test.fail() reports the FINAL test status as "passed"
+ * once the wrapped assertion throws, which suppresses Playwright's
+ * automatic screenshot/trace/video capture (only-on-failure never fires,
+ * since Playwright doesn't consider the test to have failed). This was
+ * caught in an earlier FN-04 run: the test was silently counted as
+ * "passed" while having validated nothing, because the real failure was
+ * a Cloudflare challenge page, not the documented defect. Every
+ * test.fail()-marked test body must be wrapped in this.
+ */
+export async function withFailureEvidence(
+  page: Page,
+  testInfo: TestInfo,
+  fn: () => Promise<void>,
+) {
+  try {
+    await fn();
+  } catch (err) {
+    await captureFailureEvidence(page, testInfo, 'unexpected error');
+    throw err;
+  }
+}

@@ -1,0 +1,95 @@
+{
+  "cookies": [
+    {
+      "name": "localization",
+      "value": "MY",
+      "domain": "sauce-demo.myshopify.com",
+      "path": "/",
+      "expires": -1,
+      "httpOnly": false,
+      "secure": true,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "cart_currency",
+      "value": "GBP",
+      "domain": "sauce-demo.myshopify.com",
+      "path": "/",
+      "expires": -1,
+      "httpOnly": false,
+      "secure": true,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "__adroll_fpc",
+      "value": "f7541903534ce63395fc24799534d344-1786122753409",
+      "domain": "sauce-demo.myshopify.com",
+      "path": "/",
+      "expires": -1,
+      "httpOnly": false,
+      "secure": true,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "_shopify_analytics",
+      "value": ":AZ_dNk8DAAEAObqwp9_sbLUIKRchm6j1GdsWhqwbBZC_VTTSAzMGbkr1nClnDzh93gTPr4KyN-i2gFWPOhsGnxBZSE0k-O5tQD1j5wKmbwA4PMwKj71EFtlUNxvJWxV07DeHlYImV52V_F8kdOic8zS84lJJmEg:",
+      "domain": "sauce-demo.myshopify.com",
+      "path": "/",
+      "expires": -1,
+      "httpOnly": false,
+      "secure": true,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "_shopify_marketing",
+      "value": ":AZ_dNk8DAAEAoXbdV_kIKQHjhy9pcrO1rDwv659O-1gh9gJNhGiMtGv3wh230jOU_sw4hKvT3sohEzv_m0yGqC30sgwAWzBRunTcX3EIYf2QVS1C41IbbopuPmkJNHAi0g:",
+      "domain": "sauce-demo.myshopify.com",
+      "path": "/",
+      "expires": -1,
+      "httpOnly": false,
+      "secure": true,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "_shopify_y",
+      "value": "c1ac243c-d26b-4112-aeb3-5969257b287d",
+      "domain": "sauce-demo.myshopify.com",
+      "path": "/",
+      "expires": -1,
+      "httpOnly": false,
+      "secure": true,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "_shopify_s",
+      "value": "b98a5ecb-383e-4a01-8218-02251da627aa",
+      "domain": "sauce-demo.myshopify.com",
+      "path": "/",
+      "expires": -1,
+      "httpOnly": false,
+      "secure": true,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "_shopify_essential",
+      "value": ":AZ_dNk7VAAH_9-4Z6VbougLQVW7CAseBfTVwjJjvDN9N4ZVTP9NVx3H8s6F5CMDwSWR-dWDe8AdBQLzIfW7msfWMWRZURcDSwvkQaJ6aKd-3tTSmy4G5B3OQ9LbKzkSGgaCKfQ31IMRjRtzgXyTEuBEpCKPVdQyWsAskbMmrupPdY_9MEH-21yJ5nYKS2YDYtxMhzjiKlN4SvCQ1nBKXHmURMCdM1ekOPZD13U3ZdInERx21mZkn9E8ZYCRUkiqdkUUSqdmENn-s450ocG0c3o1vJWf8M-XUx0PaXek-b1o_fRe8zb69jcftR3WEr4Y-bPMPrud9DKDzmiEkiHD78Fve9YnyoWrF8K_jg3xWG_zIGXRB0nEZuoyloA5o0mfSI1MuYMSvwlQMsMMzbBIK5h8gVVmR-YYSZZg0LvDDGTx4PBFfy7W8JW9xAMCws8zc41GYDtF-LjfGhLJX1JyYOazRpp7Hv2N6ONivDEupqqqrbMbtyx-81QV9VCdR9BeLrd6ssUWiX5et4OingUy8l1Lz7cvGerkuBOSN2-uhnV1Z5DyAcdWJLr7pR7HqDEOT_BS3jIduWSyGc6OPQy2hqX7jG22uXhiWCYniSIpYuXdlcJ5ugxWLi8an6t-N61IlP6JrmHHf8jPSpM51BCZNfb_DsfKdtcu8hPN0HHHJx6qQMDmiW15NJw2eV1jnGonZbsQd1dFrQOY5eECKYQ:",
+      "domain": "sauce-demo.myshopify.com",
+      "path": "/",
+      "expires": -1,
+      "httpOnly": false,
+      "secure": true,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "__ar_v4",
+      "value": "RLFWQFGQMZC2ZEMERYUQ34%3A20260806%3A7%7CGKTPKTIEIVDXDB73OLEF43%3A20260806%3A7%7CZEW3JXPLVRAQPNAKVX76KX%3A20260806%3A7",
+      "domain": "sauce-demo.myshopify.com",
+      "path": "/",
+      "expires": -1,
+      "httpOnly": false,
+      "secure": true,
+      "sameSite": "Lax"
+    }
+  ],
+  "origins": []
+}
