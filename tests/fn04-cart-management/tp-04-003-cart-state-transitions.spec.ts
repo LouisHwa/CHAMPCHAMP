@@ -72,26 +72,61 @@ test.describe('FN-04 Cart Management', () => {
         await checkLiveCartCount('Add product B', '(2)');
       });
 
-      await test.step('TC-04-006 #3 — change quantity on product A, commit', async () => {
+      await test.step('TC-04-006 #3 — change quantity on product A to 2 WITHOUT committing', async () => {
         await cart.goto();
+
+        const lineTotalBefore = (await cart.lineTotal(0).textContent().catch(() => null))?.trim() ?? null;
+        const orderTotalBefore = (await cart.orderTotal.textContent().catch(() => null))?.trim() ?? null;
+
+        // Deliberately no Update click: the refined TPS separates changing
+        // the field from committing it, and this step asks only whether the
+        // totals recalculate as soon as the field value changes. Under
+        // SPR-13 a value typed but not committed is not a submitted
+        // quantity, so a total that moved here would be the finding.
         await cart.lineQuantityInput(0).fill('2');
-        await cart.updateButton.click();
-        // No navigation here deliberately — checking whether totals reflect
-        // the change without the reload the Update click itself triggers.
-        const orderTotalText = await cart.orderTotal.textContent().catch(() => null);
-        await testInfo.attach('Quantity change on product A — order total immediately after click', {
-          body: `order total shown: ${orderTotalText}`,
+        await page.waitForTimeout(1_000);
+
+        const lineTotalAfter = (await cart.lineTotal(0).textContent().catch(() => null))?.trim() ?? null;
+        const orderTotalAfter = (await cart.orderTotal.textContent().catch(() => null))?.trim() ?? null;
+
+        await testInfo.attach('Uncommitted quantity change — totals before and after the field edit', {
+          body:
+            `quantity field set to: 2 (NOT committed)\n` +
+            `line total  before: ${lineTotalBefore}   after: ${lineTotalAfter}\n` +
+            `order total before: ${orderTotalBefore}   after: ${orderTotalAfter}\n` +
+            `recalculated on field change alone: ${lineTotalBefore !== lineTotalAfter || orderTotalBefore !== orderTotalAfter}`,
           contentType: 'text/plain',
         });
       });
 
-      await test.step('TC-04-006 #4 — remove product A while B remains (state stays S2)', async () => {
+      await test.step('TC-04-006 #4 — commit the quantity, totals show quantity 2', async () => {
+        await cart.updateButton.click();
+        await cart.goto();
+
+        const committedQty = await cart.lineQuantityInput(0).inputValue();
+        const lineTotal = (await cart.lineTotal(0).textContent().catch(() => null))?.trim() ?? null;
+        const orderTotal = (await cart.orderTotal.textContent().catch(() => null))?.trim() ?? null;
+
+        await testInfo.attach('Committed quantity change — cart state', {
+          body:
+            `committed quantity: ${committedQty}\n` +
+            `line total: ${lineTotal}\n` +
+            `order total: ${orderTotal}\n` +
+            `line count: ${await cart.lineCount()}`,
+          contentType: 'text/plain',
+        });
+
+        expect.soft(committedQty, 'TC-04-006 #4 expects the committed quantity to be 2.').toBe('2');
+        expect(await cart.lineCount()).toBeGreaterThan(0);
+      });
+
+      await test.step('TC-04-006 #5 — remove product A while B remains (state stays S2)', async () => {
         await cart.goto();
         await cart.removeLine(0).click();
         await checkLiveCartCount('Remove product A', '(1)');
       });
 
-      await test.step('TC-04-006 #5 — add product A again (two lines present)', async () => {
+      await test.step('TC-04-006 #6 — add product A again (two lines present)', async () => {
         await product.goto(CART_TEST_DATA.productAHandle);
         const resp = page.waitForResponse((r) => r.url().includes('/cart/add'), { timeout: 10_000 }).catch(() => null);
         await product.addToCartButton.click();
@@ -99,7 +134,7 @@ test.describe('FN-04 Cart Management', () => {
         await checkLiveCartCount('Re-add product A', '(2)');
       });
 
-      await test.step('TC-04-006 #6 — set quantity on product A to 0 while B remains (state stays S2)', async () => {
+      await test.step('TC-04-006 #7 — set quantity on product A to 0 while B remains (state stays S2)', async () => {
         await cart.goto();
         const rows = await cart.lineCount();
         const aIndex = rows - 1; // most recently re-added
@@ -108,13 +143,13 @@ test.describe('FN-04 Cart Management', () => {
         await checkLiveCartCount('Quantity 0 on product A', '(1)');
       });
 
-      await test.step('TC-04-006 #7 — remove product B, the last remaining line (S2 -> S1)', async () => {
+      await test.step('TC-04-006 #8 — remove product B, the last remaining line (S2 -> S1)', async () => {
         await cart.goto();
         await cart.removeLine(0).click();
         await checkLiveCartCount('Remove last line (B)', '(0)');
       });
 
-      await test.step('TC-04-006 #8 — add product A so one line is present (S1 -> S2)', async () => {
+      await test.step('TC-04-006 #9 — add product A so one line is present (S1 -> S2)', async () => {
         await product.goto(CART_TEST_DATA.productAHandle);
         const resp = page.waitForResponse((r) => r.url().includes('/cart/add'), { timeout: 10_000 }).catch(() => null);
         await product.addToCartButton.click();
@@ -122,7 +157,7 @@ test.describe('FN-04 Cart Management', () => {
         await checkLiveCartCount('Add product A (single line)', '(1)');
       });
 
-      await test.step('TC-04-006 #9 — set quantity on the last remaining line to 0 (S2 -> S1)', async () => {
+      await test.step('TC-04-006 #10 — set quantity on the last remaining line to 0 (S2 -> S1)', async () => {
         await cart.goto();
         await cart.lineQuantityInput(0).fill('0');
         await cart.updateButton.click();

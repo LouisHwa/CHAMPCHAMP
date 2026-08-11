@@ -65,14 +65,37 @@ test.describe('FN-04 Cart Management', () => {
 
       let unitPrice = 0;
 
-      await test.step('TC-04-001 #2 — commit quantity 1', async () => {
+      await test.step('TC-04-001 #1 — select TD-04-A, record unit price, add to cart, one line displayed', async () => {
+        // Previously folded into Set Up and the top of #2, which left
+        // TC-04-001 #1 with no step of its own in the report even though
+        // the actions were performed. The refined TPS makes it a numbered
+        // step: select the product, RECORD ITS UNIT PRICE, add it, open the
+        // cart and confirm one line.
         unitPrice = parseMoney(await product.price.textContent());
+
         const cartAddResponse = page
           .waitForResponse((res) => res.url().includes('/cart/add'), { timeout: 10_000 })
           .catch(() => null);
         await product.addToCartButton.click();
         await cartAddResponse;
 
+        await cart.goto();
+        const lineCount = await cart.lineCount();
+        const lineDescription = lineCount > 0 ? (await cart.lineDescription(0).textContent())?.trim() : null;
+
+        await testInfo.attach('TC-04-001 #1 — product added, unit price recorded', {
+          body:
+            `product: ${CART_TEST_DATA.productA}\n` +
+            `unit price recorded: ${unitPrice}\n` +
+            `line count: ${lineCount}\n` +
+            `line 0: ${lineDescription ?? '(no line)'}`,
+          contentType: 'text/plain',
+        });
+
+        expect(lineCount).toBe(1);
+      });
+
+      await test.step('TC-04-001 #2 — commit quantity 1', async () => {
         await cart.goto();
         await cart.lineQuantityInput(0).fill('1');
         await cart.updateButton.click();
