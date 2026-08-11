@@ -39,6 +39,11 @@ export class CartPage {
     return this.rows.nth(index).locator('h3');
   }
 
+  /** DEF-F4-08: this link does not pre-select the variant on the destination PDP. */
+  lineProductLink(index: number): Locator {
+    return this.rows.nth(index).locator('h3 a');
+  }
+
   lineQuantityInput(index: number): Locator {
     return this.rows.nth(index).locator('input[name="updates[]"]');
   }

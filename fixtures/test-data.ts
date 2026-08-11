@@ -68,6 +68,35 @@ export const SEARCH_TERMS = {
   whitespaceOnly: ' ',
 } as const;
 
+/**
+ * TD-04-* bindings from the refined TPS FN-04's Table 2.4a — kept as one
+ * named block so a rebind touches this file, not every FN-04 procedure.
+ * TD-04-V1/V2 read against VARIANTS.noirJacket above.
+ */
+export const CART_TEST_DATA = {
+  /** TD-04-A — Product A, the single-line test product. */
+  productA: PRODUCTS.stripedTop,
+  productAHandle: PRODUCT_HANDLES.stripedTop,
+  /** TD-04-B — Product B, distinct from Product A. */
+  productB: PRODUCTS.greyJacket,
+  productBHandle: PRODUCT_HANDLES.greyJacket,
+  /** TD-04-V — the multi-variant product (ENV-07). */
+  productV: PRODUCTS.noirJacket,
+  productVHandle: PRODUCT_HANDLES.noirJacket,
+  /** TD-04-V1 — first variant selection on TD-04-V. */
+  variant1: { size: 'M', colour: 'Blue' },
+  /** TD-04-V2 — second variant selection on TD-04-V, distinct from V1. */
+  variant2: { size: 'S', colour: 'Red' },
+  /** TD-04-N — order note text. */
+  orderNote: 'Please deliver after 6pm',
+  /**
+   * TD-04-S — assumed available stock level. DEF-F4-05 confirms no real
+   * stock count is ever displayed or enforced, so this is carried as an
+   * assumption per the TPS's own note, not read from the page.
+   */
+  assumedStock: 10,
+} as const;
+
 export const EXTERNAL_DESTINATIONS = {
   facebook: 'facebook.com',
   twitter: 'twitter.com',
