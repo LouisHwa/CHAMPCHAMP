@@ -1,7 +1,10 @@
 import { test, expect } from '../../utils/pacedTest';
 import { CartPage } from '../../pages/CartPage';
-import { addProductAndGoToCheckout, fillDeliveryAddress, waitForShippingCost, recordMessages } from './_helpers';
+import { addProductAndGoToCheckout, fillDeliveryAddress, waitForShippingCost, recordMessages, recordLineItems } from './_helpers';
 import { recordUrl, parseMoney } from '../../utils/evidence';
+import { PRODUCTS } from '../../fixtures/test-data';
+
+const CART_ITEMS = [PRODUCTS.greyJacket, PRODUCTS.bronzeSandals];
 
 /**
  * TP-05-002 — Verify shipping cost is applied by destination country
@@ -11,16 +14,17 @@ import { recordUrl, parseMoney } from '../../utils/evidence';
  * TC-05-002, TC-05-011, TC-05-012 (merged per the refined TPS FN-05,
  * replacing the old separate TP-05-002/011/012).
  *
- * TCS CORRECTION FLAGGED BY THE DOCUMENT ITSELF, not something quietly
- * worked around here: the refined TPS FN-05's own note under this
- * procedure says "TCS correction required before this procedure can be
- * executed. Set Up step 6 discharges [TC-05-002 #4], which does not yet
- * exist... The fourth step must be added to Table 2.3.5.2 before this
- * procedure is executed." The step itself (unsupported destination) is
- * built below since ENV-12 already provides the value it needs and the
- * step's own instruction is unambiguous — but the underlying TCS gap
- * this note describes is real and belongs in the team's own tracking,
- * not something this test file resolves.
+ * V2 update: the refined TPS FN-05's original "TCS correction required"
+ * note against this procedure (Set Up step 6 discharging [TC-05-002 #4],
+ * which the note said did not yet exist in Table 2.3.5.2) has been
+ * removed in the V2 document — the underlying TCS gap has been fixed
+ * upstream. TC-05-002 #4's own step logic is unchanged from before.
+ *
+ * V2 also adds TD-05-B (Bronze Sandals) alongside TD-05-A in every cart
+ * this procedure builds: "TD-05-B is added alongside TD-05-A wherever a
+ * step asserts the order total as the sum of the line totals under
+ * SPR-12, since that assertion is not meaningful against a single
+ * line." addProductAndGoToCheckout(page, true) below adds both.
  *
  * Oracle rates (UK £10, France £20) are hardcoded per SPR-17's "record
  * before each assertion" requirement — recorded fresh at each Set Up
@@ -42,12 +46,13 @@ test.describe('FN-05 Checkout', () => {
       });
     });
 
-    const { checkout } = await addProductAndGoToCheckout(page);
+    const { checkout } = await addProductAndGoToCheckout(page, true);
 
     await test.step('TC-05-002 #1 — UK delivery address applies the published UK rate', async () => {
       await fillDeliveryAddress(page, checkout, 'United Kingdom');
       await recordUrl(page, testInfo, 'UK address entered');
 
+      const lineTotal = await recordLineItems(testInfo, checkout, 'TC-05-002 #1', CART_ITEMS);
       const subtotal = parseMoney(await checkout.costSummaryRow('Subtotal').first().textContent());
       const shipping = parseMoney(await checkout.costSummaryRow('Shipping').first().textContent());
       const total = parseMoney(await checkout.costSummaryRow('Total').first().textContent());
@@ -56,6 +61,7 @@ test.describe('FN-05 Checkout', () => {
         contentType: 'text/plain',
       });
 
+      expect(lineTotal).toBeCloseTo(subtotal, 2);
       expect(shipping).toBeCloseTo(UK_RATE, 2);
       expect(total).toBeCloseTo(subtotal + shipping, 2);
     });
@@ -68,6 +74,7 @@ test.describe('FN-05 Checkout', () => {
       await checkout.deliveryField('Postcode').fill('75007');
       await waitForShippingCost(page, checkout);
 
+      const lineTotal = await recordLineItems(testInfo, checkout, 'TC-05-002 #2', CART_ITEMS);
       const subtotal = parseMoney(await checkout.costSummaryRow('Subtotal').first().textContent());
       const shipping = parseMoney(await checkout.costSummaryRow('Shipping').first().textContent());
       const total = parseMoney(await checkout.costSummaryRow('Total').first().textContent());
@@ -76,6 +83,7 @@ test.describe('FN-05 Checkout', () => {
         contentType: 'text/plain',
       });
 
+      expect(lineTotal).toBeCloseTo(subtotal, 2);
       expect(shipping).toBeCloseTo(FRANCE_RATE, 2);
       expect(total).toBeCloseTo(subtotal + shipping, 2);
     });
@@ -129,7 +137,7 @@ test.describe('FN-05 Checkout', () => {
       expect.soft(url).toContain('/checkouts/');
     });
 
-    await test.step('TC-05-002 #4 — unsupported destination country (TCS correction flagged above)', async () => {
+    await test.step('TC-05-002 #4 — unsupported destination country', async () => {
       const optionLabels = await checkout.countrySelect.locator('option').allTextContents();
       const unsupportedPresent = optionLabels.some((label) => /unsupported|test-invalid/i.test(label));
       await testInfo.attach('Unsupported-country reachability', {
@@ -149,7 +157,7 @@ test.describe('FN-05 Checkout', () => {
       }
     });
 
-    const tc011 = await addProductAndGoToCheckout(page);
+    const tc011 = await addProductAndGoToCheckout(page, true);
 
     await test.step('TC-05-011 #1 — France rate recorded as oracle', async () => {
       await testInfo.attach('Oracle rate (TC-05-011)', {
@@ -168,6 +176,7 @@ test.describe('FN-05 Checkout', () => {
       });
       await recordUrl(page, testInfo, 'France address entered');
 
+      const lineTotal = await recordLineItems(testInfo, tc011.checkout, 'TC-05-011 #2', CART_ITEMS);
       const subtotal = parseMoney(await tc011.checkout.costSummaryRow('Subtotal').first().textContent());
       const shipping = parseMoney(await tc011.checkout.costSummaryRow('Shipping').first().textContent());
       const total = parseMoney(await tc011.checkout.costSummaryRow('Total').first().textContent());
@@ -176,6 +185,7 @@ test.describe('FN-05 Checkout', () => {
         contentType: 'text/plain',
       });
 
+      expect(lineTotal).toBeCloseTo(subtotal, 2);
       expect(shipping).toBeCloseTo(FRANCE_RATE, 2);
       expect(total).toBeCloseTo(subtotal + shipping, 2);
     });
@@ -190,7 +200,7 @@ test.describe('FN-05 Checkout', () => {
       }
     });
 
-    const tc012 = await addProductAndGoToCheckout(page);
+    const tc012 = await addProductAndGoToCheckout(page, true);
 
     await test.step('TC-05-012 #1 — UK and France rates recorded as oracles', async () => {
       await testInfo.attach('Oracle rates (TC-05-012)', {
@@ -203,8 +213,11 @@ test.describe('FN-05 Checkout', () => {
       await fillDeliveryAddress(page, tc012.checkout, 'United Kingdom');
       await recordUrl(page, testInfo, 'UK address entered (TC-05-012)');
 
+      const lineTotal = await recordLineItems(testInfo, tc012.checkout, 'TC-05-012 #2', CART_ITEMS);
+      const subtotal = parseMoney(await tc012.checkout.costSummaryRow('Subtotal').first().textContent());
       const shipping = parseMoney(await tc012.checkout.costSummaryRow('Shipping').first().textContent());
       await testInfo.attach('Initial UK shipping cost', { body: `£${shipping}`, contentType: 'text/plain' });
+      expect(lineTotal).toBeCloseTo(subtotal, 2);
       expect(shipping).toBeCloseTo(UK_RATE, 2);
     });
 
@@ -216,6 +229,7 @@ test.describe('FN-05 Checkout', () => {
       await tc012.checkout.deliveryField('Postcode').fill('75007');
       await waitForShippingCost(page, tc012.checkout);
 
+      const lineTotal = await recordLineItems(testInfo, tc012.checkout, 'TC-05-012 #3', CART_ITEMS);
       const shipping = parseMoney(await tc012.checkout.costSummaryRow('Shipping').first().textContent());
       const total = parseMoney(await tc012.checkout.costSummaryRow('Total').first().textContent());
       await testInfo.attach('Recalculated France shipping cost', {
@@ -223,6 +237,7 @@ test.describe('FN-05 Checkout', () => {
         contentType: 'text/plain',
       });
 
+      expect(lineTotal).toBeCloseTo(subtotal, 2);
       expect(shipping).toBeCloseTo(FRANCE_RATE, 2);
       expect(total).toBeCloseTo(subtotal + shipping, 2);
     });

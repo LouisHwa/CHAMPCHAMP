@@ -4,6 +4,8 @@ import { CatalogPage } from '../../pages/CatalogPage';
 import { ProductPage } from '../../pages/ProductPage';
 import { CartPage } from '../../pages/CartPage';
 import { CheckoutPage } from '../../pages/CheckoutPage';
+import { PRODUCT_HANDLES } from '../../fixtures/test-data';
+import { parseMoney } from '../../utils/evidence';
 
 const STORAGE_STATE_PATH = 'playwright/.auth/user.json';
 const BASE_URL = 'https://sauce-demo.myshopify.com';
@@ -47,13 +49,66 @@ export async function startSignedInContext(browser: Browser) {
 }
 
 /**
- * Shared FN-05 setup: empty-cart baseline (ENV-08) through to a fresh
- * checkout page with one product line. Every guest-checkout TP needs
- * this same path, confirmed live: Home -> Catalog -> first in-stock
- * product -> select first available size/colour if present -> Add to
- * Cart -> /cart -> #checkout -> the single-page Shopify checkout.
+ * Selects the first available size/colour variant if the product on
+ * screen offers one, then adds it to the cart. Waits for the actual
+ * /cart/add response, not just networkidle — with slowMo pacing in the
+ * mix, networkidle alone was confirmed live to sometimes resolve before
+ * the add-to-cart AJAX call completes, leaving the cart genuinely empty
+ * at the next step. Shared by the first and (where needed) second
+ * product added in addProductAndGoToCheckout / addSecondProduct below.
  */
-export async function addProductAndGoToCheckout(page: Page) {
+async function selectVariantAndAddToCart(page: Page, product: ProductPage) {
+  if ((await product.sizeSelect.count()) > 0 && (await product.sizeSelect.locator('option').count()) > 1) {
+    const value = await product.sizeSelect.locator('option').nth(1).getAttribute('value');
+    if (value) await product.selectSize(value);
+  }
+  if ((await product.colourSelect.count()) > 0 && (await product.colourSelect.locator('option').count()) > 1) {
+    const value = await product.colourSelect.locator('option').nth(1).getAttribute('value');
+    if (value) await product.selectColour(value);
+  }
+
+  const cartAddResponse = page.waitForResponse((r) => r.url().includes('/cart/add'), { timeout: 10_000 }).catch(() => null);
+  await product.addToCartButton.click();
+  await cartAddResponse;
+}
+
+/**
+ * Adds TD-05-B (Bronze Sandals) to whatever cart is already open, via
+ * its known handle rather than the catalog grid. Used wherever a step
+ * needs a second item added without rebuilding the cart from scratch
+ * (TP-05-005's reset before TC-05-009, TP-05-006's TC-05-010 #1).
+ */
+export async function addSecondProduct(page: Page) {
+  const product = new ProductPage(page);
+  await product.goto(PRODUCT_HANDLES.bronzeSandals);
+  await selectVariantAndAddToCart(page, product);
+}
+
+/**
+ * Shared FN-05 setup: empty-cart baseline (ENV-08) through to a fresh
+ * checkout page. Home -> Catalog -> TD-05-A (Grey Jacket) -> select
+ * first available size/colour if present -> Add to Cart -> /cart ->
+ * #checkout -> the single-page Shopify checkout.
+ *
+ * TD-05-A is navigated to by its known handle (PRODUCT_HANDLES.greyJacket),
+ * not the first catalogue grid tile — confirmed live (TP-05-002, 9 Aug)
+ * that the grid's first tile is actually "Black heels", not "Grey
+ * jacket", which broke CART_ITEMS name-matching in recordLineItems once
+ * V2 needed to identify TD-05-A's own line by name. tp-05-005 already
+ * located TD-05-A this same way (CatalogPage.productLink('Grey jacket')),
+ * confirming Grey Jacket — not "whatever's first" — is TD-05-A's real
+ * identity; this just makes the shared helper consistent with that.
+ *
+ * `includeSecondProduct` adds TD-05-B (Bronze Sandals) before proceeding
+ * to checkout — needed wherever a step asserts the order total as the
+ * sum of the line totals under SPR-12 (not meaningful against a single
+ * line), and in TP-05-006, whose completed order must hold at least two
+ * items to satisfy ENV-15 for FN-06's TC-06-018. Per the refined TPS
+ * FN-05 (V2), TD-05-B joined TD-05-A in the bound test data for exactly
+ * this reason — this parameter defaults to false so tp-05-001/003/004,
+ * none of which need it, are unaffected.
+ */
+export async function addProductAndGoToCheckout(page: Page, includeSecondProduct = false) {
   const header = new HeaderBar(page);
   const catalog = new CatalogPage(page);
   const product = new ProductPage(page);
@@ -61,27 +116,13 @@ export async function addProductAndGoToCheckout(page: Page) {
   const checkout = new CheckoutPage(page);
 
   await header.gotoHome();
-  await catalog.goto();
-  await catalog.grid.locator('a').first().click();
-  await page.waitForLoadState('domcontentloaded');
+  await product.goto(PRODUCT_HANDLES.greyJacket);
+  await selectVariantAndAddToCart(page, product);
 
-  if (await product.sizeSelect.count() > 0 && (await product.sizeSelect.locator('option').count()) > 1) {
-    const value = await product.sizeSelect.locator('option').nth(1).getAttribute('value');
-    if (value) await product.selectSize(value);
-  }
-  if (await product.colourSelect.count() > 0 && (await product.colourSelect.locator('option').count()) > 1) {
-    const value = await product.colourSelect.locator('option').nth(1).getAttribute('value');
-    if (value) await product.selectColour(value);
+  if (includeSecondProduct) {
+    await addSecondProduct(page);
   }
 
-  // Wait for the actual /cart/add response, not just networkidle — with
-  // slowMo pacing now in the mix, networkidle alone was confirmed live
-  // to sometimes resolve before the add-to-cart AJAX call completes,
-  // leaving the cart genuinely empty at the next step. Start waiting
-  // before the click so there's no race between them.
-  const cartAddResponse = page.waitForResponse((r) => r.url().includes('/cart/add'), { timeout: 10_000 }).catch(() => null);
-  await product.addToCartButton.click();
-  await cartAddResponse;
   await cart.goto();
   await cart.checkoutButton.click();
   await page.waitForLoadState('domcontentloaded');
@@ -238,4 +279,33 @@ export async function recordFieldContents(
       `truncated on entry: ${actual !== entered}`,
     contentType: 'text/plain',
   });
+}
+
+/**
+ * SPR-12: records each cart line's quantity and price, read from
+ * checkout's order-summary "Shopping cart" table (CheckoutPage.
+ * lineItemRow), not just the subtotal/total — the refined TPS FN-05
+ * asks for "each line total" specifically wherever it asserts the order
+ * total as the sum of the line totals, which is only meaningful with a
+ * two-line cart. Returns the sum of the line prices, for asserting
+ * against the subtotal.
+ */
+export async function recordLineItems(
+  testInfo: TestInfo,
+  checkout: CheckoutPage,
+  label: string,
+  productNames: string[],
+): Promise<number> {
+  const lines = await Promise.all(
+    productNames.map(async (name) => {
+      const quantity = (await checkout.lineItemQuantity(name).textContent().catch(() => null))?.trim() ?? '(not found)';
+      const price = parseMoney(await checkout.lineItemPrice(name).textContent().catch(() => null));
+      return { name, quantity, price };
+    }),
+  );
+  await testInfo.attach(`Line items — ${label}`, {
+    body: lines.map((l) => `${l.name}: quantity ${l.quantity}, price £${Number.isFinite(l.price) ? l.price.toFixed(2) : l.price}`).join('\n'),
+    contentType: 'text/plain',
+  });
+  return lines.reduce((sum, l) => sum + (Number.isFinite(l.price) ? l.price : 0), 0);
 }

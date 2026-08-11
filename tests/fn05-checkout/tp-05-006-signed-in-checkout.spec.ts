@@ -3,6 +3,7 @@ import { ConfirmationPage } from '../../pages/ConfirmationPage';
 import { MyAccountPage } from '../../pages/MyAccountPage';
 import {
   startSignedInContext,
+  addSecondProduct,
   fillDeliveryAddress,
   fillCard,
   TEST_CARDS,
@@ -11,6 +12,7 @@ import {
   recordSimulationValue,
 } from './_helpers';
 import { recordUrl } from '../../utils/evidence';
+import { PRODUCTS } from '../../fixtures/test-data';
 
 /**
  * TP-05-006 — Verify a signed-in shopper can complete checkout and the
@@ -27,6 +29,16 @@ import { recordUrl } from '../../utils/evidence';
  * Needs a real, freshly captured session file to run.
  *
  * One order is completed by this procedure.
+ *
+ * V2 update: the cart now holds TD-05-A AND TD-05-B (Bronze Sandals),
+ * not TD-05-A alone. Per the refined TPS FN-05's own note: "in TP-05-
+ * 006, whose completed order must hold at least two items to satisfy
+ * ENV-15 for TC-06-018" — this is the order FN-06's TP-06-007 reads for
+ * TC-06-014/017/018, and a single-line order wouldn't let TC-06-018
+ * distinguish a reorder adding all items from one adding only the
+ * first. (FN-06's own TP-06-007 independently worked around this exact
+ * gap before V2 existed, by reading whatever real order already existed
+ * rather than placing its own — this fix addresses it at the source.)
  */
 test.describe('FN-05 Checkout', () => {
   test('TP-05-006 signed-in checkout', async ({ browser }, testInfo) => {
@@ -49,13 +61,17 @@ test.describe('FN-05 Checkout', () => {
       expect(await cart.lineCount()).toBe(0);
     });
 
-    await test.step('TC-05-010 #1 — add TD-05-A, proceed to checkout, Contact section reflects the signed-in account', async () => {
+    await test.step('TC-05-010 #1 — add TD-05-A and TD-05-B, proceed to checkout, Contact section reflects the signed-in account', async () => {
       await header.gotoHome();
       await catalog.goto();
-      await catalog.grid.locator('a').first().click();
+      // TD-05-A by name, not the first grid tile: confirmed live (9 Aug)
+      // that the catalogue's first tile is "Black heels", so .first()
+      // added the wrong product while the step claimed to add TD-05-A.
+      await catalog.productLink(PRODUCTS.greyJacket).click();
       await page.waitForLoadState('domcontentloaded');
       await product.addToCartButton.click();
       await page.waitForLoadState('networkidle').catch(() => {});
+      await addSecondProduct(page);
       await cart.goto();
       await cart.checkoutButton.click();
       await page.waitForLoadState('domcontentloaded');

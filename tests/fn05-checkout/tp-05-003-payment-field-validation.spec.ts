@@ -1,5 +1,6 @@
 import { test, expect } from '../../utils/pacedTest';
 import type { Locator } from '@playwright/test';
+import { CartPage } from '../../pages/CartPage';
 import { addProductAndGoToCheckout, fillDeliveryAddress, recordMessages } from './_helpers';
 import { recordUrl } from '../../utils/evidence';
 
@@ -236,5 +237,17 @@ test.describe('FN-05 Checkout', () => {
         expect(fullyRetained && valid).toBe(c.shouldAccept);
       });
     }
+
+    await test.step('Wrap Up — navigate away without completing an order, empty cart, return home', async () => {
+      await page.goto('/', { waitUntil: 'domcontentloaded' });
+      const cart = new CartPage(page);
+      await cart.goto();
+      const remaining = await cart.lineCount();
+      for (let i = remaining - 1; i >= 0; i--) {
+        await cart.removeLine(i).click();
+      }
+      expect(await cart.lineCount()).toBe(0);
+      await page.goto('/', { waitUntil: 'domcontentloaded' });
+    });
   });
 });

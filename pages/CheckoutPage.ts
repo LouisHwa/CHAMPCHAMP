@@ -53,6 +53,7 @@ export class CheckoutPage {
 
   readonly shippingMethodSection: Locator;
   readonly costSummaryTable: Locator;
+  readonly shoppingCartTable: Locator;
   readonly testPaymentGatewayButton: Locator;
 
   readonly billingAddressCheckbox: Locator;
@@ -73,6 +74,7 @@ export class CheckoutPage {
 
     this.shippingMethodSection = page.locator('h2', { hasText: 'Shipping method' }).locator('xpath=..');
     this.costSummaryTable = page.getByRole('table', { name: 'Cost summary' });
+    this.shoppingCartTable = page.getByRole('table', { name: 'Shopping cart' });
     this.testPaymentGatewayButton = page.getByRole('button', { name: 'Test Payment Gateway' });
 
     this.billingAddressCheckbox = page.getByRole('checkbox', { name: 'Use shipping address as billing address' });
@@ -127,12 +129,51 @@ export class CheckoutPage {
     return this.cardFrame(fieldTitle).getByRole('textbox', { name: fieldTitle });
   }
 
-  /** Cost summary row cell, e.g. costSummaryRow('Subtotal'), costSummaryRow('Shipping'), costSummaryRow('Total'). */
+  /**
+   * Cost summary row cell, e.g. costSummaryRow('Subtotal'),
+   * costSummaryRow('Shipping'), costSummaryRow('Total').
+   *
+   * Matched as a start-anchored regex, not an exact string: confirmed
+   * live (9 Aug) that the Subtotal rowheader carries an item-count
+   * suffix once the cart holds more than one line — it reads "Subtotal ·
+   * 2 items", so exact: true silently matched nothing as soon as the
+   * refined TPS FN-05 (V2) made these carts two-item. Anchoring at the
+   * start still keeps "Total" from matching "Subtotal ·..." or the
+   * sibling "Including £x in taxes" rowheader.
+   */
   costSummaryRow(label: string): Locator {
     return this.costSummaryTable
       .getByRole('row')
-      .filter({ has: this.page.getByRole('rowheader', { name: label, exact: true }) })
+      .filter({ has: this.page.getByRole('rowheader', { name: new RegExp(`^${label}\\b`) }) })
       .getByRole('cell');
+  }
+
+  /**
+   * The order-summary "Shopping cart" table lists each cart line as its
+   * own row — confirmed live: role="table" (accessible name "Shopping
+   * cart", via aria-labelledby) containing a header rowgroup
+   * (columnheaders: Product image, Description, Quantity, Price) and a
+   * second rowgroup of real line rows, each with 4 cells in that same
+   * order. Only line rows contain role="cell" — the header row has
+   * role="columnheader" instead — so filtering for a cell is what
+   * distinguishes real lines from the header, without depending on the
+   * per-render hashed ids/classes everywhere else on this page.
+   */
+  lineItemRow(productName: string): Locator {
+    return this.shoppingCartTable
+      .getByRole('row')
+      .filter({ has: this.page.getByRole('cell') })
+      .filter({ has: this.page.getByText(productName, { exact: true }) });
+  }
+
+  /** The line's quantity cell (3rd of 4: image, description, quantity, price). */
+  lineItemQuantity(productName: string): Locator {
+    return this.lineItemRow(productName).getByRole('cell').nth(2);
+  }
+
+  /** The line's price cell (last of 4). */
+  lineItemPrice(productName: string): Locator {
+    return this.lineItemRow(productName).getByRole('cell').last();
   }
 
   /** A shipping method radio option by its visible name, e.g. shippingMethodOption('International Shipping'). */

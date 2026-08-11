@@ -26,14 +26,14 @@ import { recordUrl } from '../../utils/evidence';
 test.describe('FN-05 Checkout', () => {
   test('TP-05-001 checkout entry', async ({ page, browser }, testInfo) => {
     const header = new HeaderBar(page);
-    const catalog = new CatalogPage(page);
     const product = new ProductPage(page);
     const cart = new CartPage(page);
     const checkout = new CheckoutPage(page);
 
     async function addProductAndReachCheckout(p: typeof page, prod: ProductPage, c: CartPage) {
-      await catalog.goto();
-      await catalog.grid.locator('a').first().click();
+      const pageCatalog = new CatalogPage(p);
+      await pageCatalog.goto();
+      await pageCatalog.grid.locator('a').first().click();
       await p.waitForLoadState('domcontentloaded');
       if ((await prod.sizeSelect.count()) > 0 && (await prod.sizeSelect.locator('option').count()) > 1) {
         const value = await prod.sizeSelect.locator('option').nth(1).getAttribute('value');

@@ -8,6 +8,7 @@ import { CheckoutPage } from '../../pages/CheckoutPage';
 import { ConfirmationPage } from '../../pages/ConfirmationPage';
 import {
   addProductAndGoToCheckout,
+  addSecondProduct,
   fillDeliveryAddress,
   fillCard,
   TEST_CARDS,
@@ -15,10 +16,14 @@ import {
   BILLING_ADDRESS,
   SIMULATION_VALUES,
   recordSimulationValue,
+  recordLineItems,
 } from './_helpers';
 import { recordUrl, parseMoney, withFailureEvidence } from '../../utils/evidence';
 import { GUEST_CONTACT, GUEST_IMAP_CONFIG } from '../../fixtures/credentials';
 import { waitForEmail, extractLink } from '../../utils/email';
+import { PRODUCTS } from '../../fixtures/test-data';
+
+const CART_ITEMS = [PRODUCTS.greyJacket, PRODUCTS.bronzeSandals];
 
 /**
  * TP-05-005 — Verify a guest can complete a purchase end to end with
@@ -46,6 +51,15 @@ import { waitForEmail, extractLink } from '../../utils/email';
  * dropdown failure is what determines the overall result even though
  * the other two sections — including both order completions — genuinely
  * pass.
+ *
+ * V2 update: every cart this procedure builds now holds TD-05-A AND
+ * TD-05-B (Bronze Sandals), not TD-05-A alone — per the refined TPS
+ * FN-05, "TD-05-B is added alongside TD-05-A wherever a step asserts
+ * the order total as the sum of the line totals under SPR-12," which
+ * TC-05-008 #1's order-summary check and TC-05-013's completion both
+ * are. TC-05-009 must rebuild the identical two-line cart from TC-05-
+ * 008 #1, or its comparison at TC-05-009 #2 would attribute a
+ * cart-content difference to the route instead.
  */
 test.describe('FN-05 Checkout', () => {
   test('TP-05-005 guest purchase, checkout route and billing address', async ({ page }, testInfo) => {
@@ -63,7 +77,7 @@ test.describe('FN-05 Checkout', () => {
     await withFailureEvidence(page, testInfo, 'TP-05-005 unexpected failure', async () => {
       const orderStartedAt = new Date();
 
-      await test.step('TC-05-008 #1 — add TD-05-A via nav Check Out / My Cart CHECK OUT, order summary displayed', async () => {
+      await test.step('TC-05-008 #1 — add TD-05-A and TD-05-B via nav Check Out / My Cart CHECK OUT, order summary displayed', async () => {
         await header.gotoHome();
         await catalog.goto();
         await catalog.productLink('Grey jacket').click().catch(async () => {
@@ -72,11 +86,17 @@ test.describe('FN-05 Checkout', () => {
         await page.waitForLoadState('domcontentloaded');
         await product.addToCartButton.click();
         await page.waitForLoadState('networkidle').catch(() => {});
+        await addSecondProduct(page);
         await cart.goto();
         await cart.checkoutButton.click();
         await page.waitForLoadState('domcontentloaded');
         await recordUrl(page, testInfo, 'Checkout page reached (TC-05-008)');
 
+        // SPR-12: each item's name, quantity and price, not just that
+        // Subtotal/Total are present — the item's product image is
+        // captured by the same screenshot SPR-04 already takes on
+        // failure; a passing run's order summary is confirmed by name.
+        await recordLineItems(testInfo, checkout, 'TC-05-008 #1', CART_ITEMS);
         await expect(checkout.costSummaryRow('Subtotal').first()).toBeVisible();
         await expect(checkout.costSummaryRow('Total').first()).toBeVisible();
       });
@@ -94,6 +114,7 @@ test.describe('FN-05 Checkout', () => {
 
       await test.step('TC-05-008 #3 — UK delivery address applies published UK shipping rate', async () => {
         await fillDeliveryAddress(page, checkout, 'United Kingdom');
+        const lineTotal = await recordLineItems(testInfo, checkout, 'TC-05-008 #3', CART_ITEMS);
         const subtotal = parseMoney(await checkout.costSummaryRow('Subtotal').first().textContent());
         const shipping = parseMoney(await checkout.costSummaryRow('Shipping').first().textContent());
         const total = parseMoney(await checkout.costSummaryRow('Total').first().textContent());
@@ -102,6 +123,7 @@ test.describe('FN-05 Checkout', () => {
           body: `subtotal: ${subtotal}\nshipping: ${shipping}\ntotal: ${total}`,
           contentType: 'text/plain',
         });
+        expect(lineTotal).toBeCloseTo(subtotal, 2);
         expect(shipping).toBeCloseTo(10.0, 2);
         expect(total).toBeCloseTo(subtotal + shipping, 2);
       });
@@ -137,7 +159,10 @@ test.describe('FN-05 Checkout', () => {
           contentType: 'text/plain',
         });
 
-        const viewOrderLink = extractLink(email.html, 'View order');
+        // Confirmed live (FN-06 work, 9 Aug): the button's actual text is
+        // "View your order", not "View order" as the TPS's own wording
+        // says — extractLink needs the literal text, or it never matches.
+        const viewOrderLink = extractLink(email.html, 'View your order');
         await testInfo.attach('Confirmation email — View order link', {
           body: viewOrderLink ?? '(not found)',
           contentType: 'text/plain',
@@ -147,11 +172,17 @@ test.describe('FN-05 Checkout', () => {
         expect(viewOrderLink).not.toBeNull();
       });
 
-      await test.step('Reset — confirm cart empty after order, re-add TD-05-A for TC-05-009 (same cart contents as TC-05-008 #1)', async () => {
+      await test.step('Reset — confirm cart empty after order, re-add TD-05-A and TD-05-B for TC-05-009 (same cart contents as TC-05-008 #1)', async () => {
         await cart.goto();
         expect(await cart.lineCount()).toBe(0);
+        await catalog.goto();
+        await catalog.productLink('Grey jacket').click().catch(async () => {
+          await catalog.grid.locator('a').first().click();
+        });
+        await page.waitForLoadState('domcontentloaded');
         await product.addToCartButton.click();
         await page.waitForLoadState('networkidle').catch(() => {});
+        await addSecondProduct(page);
       });
 
       await test.step('TC-05-009 #1 — My Cart dropdown opens showing items and CHECK OUT', async () => {
@@ -175,6 +206,7 @@ test.describe('FN-05 Checkout', () => {
         expect.soft(url).toContain('/checkouts/');
 
         await fillDeliveryAddress(page, checkout, 'United Kingdom').catch(() => {});
+        const lineTotal = await recordLineItems(testInfo, checkout, 'TC-05-009 #2', CART_ITEMS).catch(() => NaN);
         const subtotal = parseMoney(await checkout.costSummaryRow('Subtotal').first().textContent().catch(() => null));
         const shipping = parseMoney(await checkout.costSummaryRow('Shipping').first().textContent().catch(() => null));
         const total = parseMoney(await checkout.costSummaryRow('Total').first().textContent().catch(() => null));
@@ -182,6 +214,7 @@ test.describe('FN-05 Checkout', () => {
           body: `dropdown route: subtotal ${subtotal}, shipping ${shipping}, total ${total}\nTC-05-008 #1: subtotal ${tc008Summary.subtotal}, shipping ${tc008Summary.shipping}, total ${tc008Summary.total}`,
           contentType: 'text/plain',
         });
+        expect.soft(lineTotal).toBeCloseTo(subtotal, 2);
         expect.soft(total).toBeCloseTo(tc008Summary.total, 2);
       });
 
@@ -196,7 +229,7 @@ test.describe('FN-05 Checkout', () => {
         expect(await cart.lineCount()).toBe(0);
       });
 
-      const tc013 = await addProductAndGoToCheckout(page);
+      const tc013 = await addProductAndGoToCheckout(page, true);
       // TD-05-E again: a contact address is required to complete a guest
       // order, and SPR-18 needs it recorded against the confirmation number.
       await tc013.checkout.emailField.fill(guestEmail);

@@ -158,5 +158,12 @@ test.describe('FN-05 Checkout', () => {
         });
       });
     });
+
+    await test.step('Wrap Up — return to store home page, confirm cart empty following order completion', async () => {
+      await page.goto('/', { waitUntil: 'domcontentloaded' });
+      const cart = new CartPage(page);
+      await cart.goto();
+      expect(await cart.lineCount()).toBe(0);
+    });
   });
 });
