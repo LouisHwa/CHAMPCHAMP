@@ -93,7 +93,17 @@ export default defineConfig({
         launchOptions: { slowMo: Number(process.env.SLOWMO ?? 600) },
 
         actionTimeout: 10_000,
-        navigationTimeout: 20_000,
+        // 20s was not enough: TP-04-004 died in Set Up on 10 August when
+        // page.goto('/cart') exceeded it, while the captured page text shows
+        // the storefront had rendered normally — so the content arrived and
+        // only the navigation event was late. This store is third-party
+        // heavy (the reason every page object navigates with
+        // 'domcontentloaded' rather than 'load' — see HeaderBar.gotoHome),
+        // and a slow local uplink produces the same signature. 45s absorbs
+        // both without masking a genuine hang, since the per-test budget
+        // still cuts in at 90s. Ported from main; fn05-checkout was worked
+        // independently and never received it.
+        navigationTimeout: 45_000,
     },
 
     // TCS 2.1.1: latest stable Chrome, Firefox or Edge.
