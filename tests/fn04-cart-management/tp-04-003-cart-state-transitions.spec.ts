@@ -39,6 +39,28 @@ test.describe('FN-04 Cart Management', () => {
     const cart = new CartPage(page);
 
     await withFailureEvidence(page, testInfo, async () => {
+      /**
+       * Finds a cart line by product name. Index-based targeting is wrong
+       * here: this cart lists lines NEWEST FIRST, so index 0 is whichever
+       * product was added last, not TD-04-A. Confirmed on 12 August — the
+       * step that meant to set TD-04-A's quantity to 2 actually set
+       * TD-04-B's (line total came back £110.00 = 2 × £55.00, Grey jacket's
+       * price, not Striped top's £50.00), and the removal steps then took
+       * out the wrong lines and emptied the cart early, so #8, #9 and #10
+       * never ran at all.
+       */
+      async function lineIndexFor(productName: string): Promise<number> {
+        const count = await cart.lineCount();
+        for (let i = 0; i < count; i++) {
+          const text = (await cart.lineDescription(i).textContent()) ?? '';
+          if (text.toLowerCase().includes(productName.toLowerCase())) return i;
+        }
+        throw new Error(
+          `No cart line found for "${productName}". Lines present: ${count}. ` +
+            'Re-check the state the previous step left behind.',
+        );
+      }
+
       async function checkLiveCartCount(label: string, expectedCount: string) {
         const liveText = await header.cartCount.textContent();
         await cart.goto();
@@ -74,8 +96,9 @@ test.describe('FN-04 Cart Management', () => {
 
       await test.step('TC-04-006 #3 — change quantity on product A to 2 WITHOUT committing', async () => {
         await cart.goto();
+        const aIndex = await lineIndexFor(CART_TEST_DATA.productA);
 
-        const lineTotalBefore = (await cart.lineTotal(0).textContent().catch(() => null))?.trim() ?? null;
+        const lineTotalBefore = (await cart.lineTotal(aIndex).textContent().catch(() => null))?.trim() ?? null;
         const orderTotalBefore = (await cart.orderTotal.textContent().catch(() => null))?.trim() ?? null;
 
         // Deliberately no Update click: the refined TPS separates changing
@@ -83,10 +106,10 @@ test.describe('FN-04 Cart Management', () => {
         // totals recalculate as soon as the field value changes. Under
         // SPR-13 a value typed but not committed is not a submitted
         // quantity, so a total that moved here would be the finding.
-        await cart.lineQuantityInput(0).fill('2');
+        await cart.lineQuantityInput(aIndex).fill('2');
         await page.waitForTimeout(1_000);
 
-        const lineTotalAfter = (await cart.lineTotal(0).textContent().catch(() => null))?.trim() ?? null;
+        const lineTotalAfter = (await cart.lineTotal(aIndex).textContent().catch(() => null))?.trim() ?? null;
         const orderTotalAfter = (await cart.orderTotal.textContent().catch(() => null))?.trim() ?? null;
 
         await testInfo.attach('Uncommitted quantity change — totals before and after the field edit', {
@@ -103,8 +126,9 @@ test.describe('FN-04 Cart Management', () => {
         await cart.updateButton.click();
         await cart.goto();
 
-        const committedQty = await cart.lineQuantityInput(0).inputValue();
-        const lineTotal = (await cart.lineTotal(0).textContent().catch(() => null))?.trim() ?? null;
+        const aIdx = await lineIndexFor(CART_TEST_DATA.productA);
+        const committedQty = await cart.lineQuantityInput(aIdx).inputValue();
+        const lineTotal = (await cart.lineTotal(aIdx).textContent().catch(() => null))?.trim() ?? null;
         const orderTotal = (await cart.orderTotal.textContent().catch(() => null))?.trim() ?? null;
 
         await testInfo.attach('Committed quantity change — cart state', {
@@ -122,7 +146,7 @@ test.describe('FN-04 Cart Management', () => {
 
       await test.step('TC-04-006 #5 — remove product A while B remains (state stays S2)', async () => {
         await cart.goto();
-        await cart.removeLine(0).click();
+        await cart.removeLine(await lineIndexFor(CART_TEST_DATA.productA)).click();
         await checkLiveCartCount('Remove product A', '(1)');
       });
 
@@ -136,16 +160,14 @@ test.describe('FN-04 Cart Management', () => {
 
       await test.step('TC-04-006 #7 — set quantity on product A to 0 while B remains (state stays S2)', async () => {
         await cart.goto();
-        const rows = await cart.lineCount();
-        const aIndex = rows - 1; // most recently re-added
-        await cart.lineQuantityInput(aIndex).fill('0');
+        await cart.lineQuantityInput(await lineIndexFor(CART_TEST_DATA.productA)).fill('0');
         await cart.updateButton.click();
         await checkLiveCartCount('Quantity 0 on product A', '(1)');
       });
 
       await test.step('TC-04-006 #8 — remove product B, the last remaining line (S2 -> S1)', async () => {
         await cart.goto();
-        await cart.removeLine(0).click();
+        await cart.removeLine(await lineIndexFor(CART_TEST_DATA.productB)).click();
         await checkLiveCartCount('Remove last line (B)', '(0)');
       });
 
