@@ -37,9 +37,21 @@ import { captureCrashEvidence, withFailureEvidence } from '../../utils/evidence'
  *   DEF-F4-04 (Major) — quantity 1,000,000 is handled fine, but
  *     1,000,001 and above genuinely crash the cart page. Each large-
  *     quantity attempt is wrapped defensively (crash listener,
- *     try/catch, dead-page check) so a crash on one value doesn't take
- *     down the rest of the test, reusing the same helper proven for
- *     this defect previously.
+ *     try/catch, dead-page check) and, if the page does not survive, the
+ *     next value is attempted on a fresh page in the same context — so a
+ *     crash on one value does not consume the rest. Before 13 August it
+ *     did: the first crash set pageIsDead and every later value was
+ *     recorded as "skipped", discharging no coverage.
+ *
+ *     1,000,000 is the boundary value that should PASS. It was failing
+ *     for a reason of our own making — a hardcoded 10s cap on the /cart
+ *     navigation inside attemptQuantity, against a suite
+ *     navigationTimeout of 45s — which reported a late navigation as an
+ *     unresponsive page. Confirmed by hand that 1,000,000 is handled
+ *     fine. Do not "fix" a failure at this value by rebinding the test
+ *     data downwards: it is the just-below-threshold half of the
+ *     boundary pair with 1,000,001, and moving it stops the pair
+ *     probing the threshold at all.
  *
  * Wrapped in withFailureEvidence so an unrelated breakage still leaves
  * a labelled screenshot and page text behind alongside Playwright's
@@ -55,14 +67,50 @@ test.describe('FN-04 Cart Management', () => {
     const product = new ProductPage(page);
     const cart = new CartPage(page);
 
-    async function attemptQuantity(target: Page, qty: string): Promise<{ responsive: boolean; detail: string }> {
+    /**
+     * responsive  — the store handled the commit without failing.
+     * pageUsable  — the page can still be driven. A rendered error page
+     *               can be; a crashed or closed one cannot. Kept separate
+     *               so the loop only replaces the page when it must.
+     * committed   — the quantity actually on the cart line afterwards, or
+     *               null where it could not be read.
+     */
+    type QtyOutcome = {
+      responsive: boolean;
+      pageUsable: boolean;
+      committed: string | null;
+      detail: string;
+    };
+
+    async function attemptQuantity(target: Page, qty: string): Promise<QtyOutcome> {
       let crashed = false;
       const onCrash = () => {
         crashed = true;
       };
       target.on('crash', onCrash);
+
+      // Go through CartPage rather than a raw locator. The store renders
+      // the cart form TWICE on /cart — once in the hidden #drawer minicart
+      // that sits in the header, once in #cart itself — and both copies
+      // carry name="updates[]" AND the same id. #drawer comes first in DOM
+      // order, so `locator('input[name="updates[]"]').first()` resolved to
+      // the hidden copy and every fill timed out with "element is not
+      // visible", leaving the quantity untouched. TC-04-005 then recorded
+      // an unresponsive page when the store had never been sent the value
+      // at all. CartPage.rows is scoped to '#cart .row' for exactly this
+      // reason, which is why the earlier steps using it worked.
+      const targetCart = new CartPage(target);
+
       try {
-        await target.locator('input[name="updates[]"]').first().fill(qty, { timeout: 10_000 });
+        // Start every boundary value from a freshly rendered /cart. Clicking
+        // Update is a form POST that reloads the page, so each attempt would
+        // otherwise inherit whatever DOM the previous commit left behind —
+        // and each value is its own coverage item, so they must not depend
+        // on each other's end state. Also gives the recovery path a loaded
+        // page without needing to navigate separately.
+        await target.goto('/cart', { waitUntil: 'domcontentloaded' });
+
+        await targetCart.lineQuantityInput(0).fill(qty, { timeout: 10_000 });
 
         // SPR-14 evidence: show the value actually sitting in the field
         // before it is committed. Without this the report only ever shows
@@ -74,21 +122,78 @@ test.describe('FN-04 Cart Management', () => {
           })
           .catch(() => {});
 
-        await target.locator('#update').click({ timeout: 10_000 });
+        await targetCart.updateButton.click({ timeout: 10_000 });
         await target.waitForTimeout(2_000);
         if (target.isClosed() || crashed) {
           await captureCrashEvidence(target, testInfo, `Quantity ${qty} — after commit (crashed)`);
-          return { responsive: false, detail: 'page crashed or closed after commit' };
+          return {
+            responsive: false,
+            pageUsable: false,
+            committed: null,
+            detail: 'page crashed or closed after commit',
+          };
         }
-        await target.goto('https://sauce-demo.myshopify.com/cart', { waitUntil: 'domcontentloaded', timeout: 10_000 });
-        const rowCount = await target.locator('#cart .row').count();
-        return { responsive: true, detail: `page responsive; #cart .row count now ${rowCount}` };
+
+        // Shopify's failure page ("Something went wrong. / Cart Error") is a
+        // SUCCESSFULLY RENDERED page, so neither page.on('crash') nor
+        // isClosed() sees it — and the recovery navigation below would
+        // reload a working /cart and erase it. Before this check, 1,000,001
+        // and 5,000,000 both reported responsive: true with the quantity
+        // silently still at 1,000,000: a false pass over DEF-F4-04, the
+        // exact defect these steps exist to record. Detect it here, while
+        // it is still on screen.
+        const bodyText = await target.locator('body').innerText().catch(() => '');
+        const errorMatch = bodyText.match(/cart error|something went wrong/i);
+        if (errorMatch) {
+          const summary = bodyText
+            .split('\n')
+            .map((l) => l.trim())
+            .filter(Boolean)
+            .slice(0, 6)
+            .join(' | ');
+          await captureCrashEvidence(target, testInfo, `Quantity ${qty} — store error page after commit`);
+          return {
+            responsive: false,
+            pageUsable: true,
+            committed: null,
+            detail: `store returned an error page after commit (matched "${errorMatch[0]}") at ${target.url()} — page text: ${summary}`,
+          };
+        }
+        // Inherit navigationTimeout (45s) rather than capping at 10s, and
+        // use baseURL like every other navigation in the suite. The cap
+        // was reporting a LATE navigation as an unresponsive page: this is
+        // the heaviest /cart load here — Shopify recalculates a
+        // £50,000,000 total right after the commit — and 20s was already
+        // proven insufficient for a plain /cart navigation on 10 August
+        // (see playwright.config.ts navigationTimeout). At 10s, quantity
+        // 1,000,000 failed the responsiveness check even though it is
+        // handled fine by hand, which reads in the Defect Log as DEF-F4-04
+        // firing one value below its actual threshold.
+        await target.goto('/cart', { waitUntil: 'domcontentloaded' });
+        // lineCount() filters #cart .row to rows that actually contain a
+        // quantity input — the totals summary div also carries .row and
+        // would otherwise be counted as a line (see CartPage.ts).
+        const rowCount = await targetCart.lineCount();
+        const committed = await targetCart.lineQuantityInput(0).inputValue().catch(() => null);
+        return {
+          responsive: true,
+          pageUsable: true,
+          committed,
+          detail: `page responsive; cart line count now ${rowCount}; quantity on the line: ${committed ?? '(unreadable)'}`,
+        };
       } catch (error) {
         // The page stopped responding mid-interaction. Capture whatever
         // state it is in — a rendered error page, a frozen cart, or a
         // screenshot that cannot be taken at all.
         await captureCrashEvidence(target, testInfo, `Quantity ${qty} — unresponsive`);
-        return { responsive: false, detail: `error during interaction: ${(error as Error).message}` };
+        return {
+          responsive: false,
+          // A timeout or selector failure leaves the page perfectly
+          // drivable; only a crash or a closed page does not.
+          pageUsable: !target.isClosed() && !crashed,
+          committed: null,
+          detail: `error during interaction: ${(error as Error).message}`,
+        };
       } finally {
         target.off('crash', onCrash);
       }
@@ -172,6 +277,7 @@ test.describe('FN-04 Cart Management', () => {
       });
 
       let pageIsDead = false;
+      let target: Page = page;
 
       for (const [stepLabel, qty] of [
         ['TC-04-005 #1', '1000000'],
@@ -179,40 +285,77 @@ test.describe('FN-04 Cart Management', () => {
         ['TC-04-005 #3', '5000000'],
       ] as const) {
         await test.step(`${stepLabel} — quantity ${qty}`, async () => {
-          if (pageIsDead) {
-            await testInfo.attach(`Quantity ${qty} — skipped`, {
-              body: 'Skipped: the page did not recover from a previous crash.',
+          // Recover rather than skip. Each boundary value is its own
+          // coverage item, so a crash on one must not consume the rest —
+          // previously 1,000,001 crashing left 5,000,000 recorded as
+          // "skipped", which discharges nothing and reports a failure that
+          // says nothing about the store. A new page in the SAME context
+          // still sees the cart, because Shopify carries it in a cookie
+          // rather than in the page.
+          if (pageIsDead || target.isClosed()) {
+            await testInfo.attach(`Quantity ${qty} — recovered on a fresh page`, {
+              body:
+                'The previous quantity left the page unresponsive. Reopened in the same browser ' +
+                'context so this value is still exercised; the cart line survives the crash.',
               contentType: 'text/plain',
             });
-            expect.soft(false, `Skipped quantity ${qty} because a previous step in this test failed.`).toBe(true);
-            return;
+            // attemptQuantity navigates to /cart itself, so no goto here.
+            target = await page.context().newPage();
+            pageIsDead = false;
           }
 
-          const result = await attemptQuantity(page, qty);
+          const result = await attemptQuantity(target, qty);
           await testInfo.attach(`Quantity ${qty} — page responsiveness`, {
-            body: `responsive: ${result.responsive}\ndetail: ${result.detail}`,
+            body:
+              `responsive: ${result.responsive}\n` +
+              `quantity requested: ${qty}\n` +
+              `quantity committed: ${result.committed ?? '(not committed)'}\n` +
+              `committed value matches requested: ${result.committed === qty}\n` +
+              `detail: ${result.detail}`,
             contentType: 'text/plain',
           });
-          if (!result.responsive) pageIsDead = true;
+          // Only a crash or a closed page needs a replacement page; an
+          // error page is still drivable, and attemptQuantity re-navigates
+          // to /cart at the start of the next attempt anyway.
+          if (!result.pageUsable) pageIsDead = true;
 
-          expect.soft(result.responsive, `TC-04-005 expects the page to remain responsive at quantity ${qty}.`).toBe(true);
+          expect
+            .soft(result.responsive, `TC-04-005 expects quantity ${qty} to be handled without the store failing.`)
+            .toBe(true);
+          // The second half of the false pass this step used to produce:
+          // the store rendered an error page and kept the PREVIOUS
+          // quantity, and nothing compared what was committed against what
+          // was requested, so a silently discarded value read as a pass.
+          expect
+            .soft(
+              result.committed,
+              `TC-04-005 expects quantity ${qty} to reach the cart line, or to be refused with a message — not silently discarded.`,
+            )
+            .toBe(qty);
         });
       }
 
       await test.step('Wrap Up — remove the test product, return to baseline', async () => {
-        if (pageIsDead) {
+        // A crashed page used to skip cleanup entirely, leaving the
+        // large-quantity line in the cart. Every other procedure's Set Up
+        // hard-asserts an empty cart, so the next run would fail in its own
+        // Set Up for a reason that has nothing to do with it. Clean up
+        // through a live page instead — the cart is context state, so a
+        // fresh page can still empty it.
+        if (pageIsDead || target.isClosed()) {
+          target = await page.context().newPage();
           await testInfo.attach('Wrap Up', {
-            body: 'Page did not recover from a crash; cleanup relies on a fresh context on the next test run rather than this one.',
+            body: 'Previous page was unresponsive; cleaning up on a fresh page in the same context so the cart is returned to baseline for the next procedure.',
             contentType: 'text/plain',
           });
-          return;
         }
-        await cart.goto();
-        const remaining = await cart.lineCount();
+        const liveCart = new CartPage(target);
+        await liveCart.goto();
+        const remaining = await liveCart.lineCount();
         for (let i = remaining - 1; i >= 0; i--) {
-          await cart.removeLine(i).click();
+          await liveCart.removeLine(i).click();
         }
-        await header.gotoHome();
+        await new HeaderBar(target).gotoHome();
       });
     });
   });
