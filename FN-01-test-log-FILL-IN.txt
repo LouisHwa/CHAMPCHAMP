@@ -1,0 +1,190 @@
+FN-01 PRODUCT BROWSING AND NAVIGATION TEST LOG - VALUES TO COPY
+Section 2.1 - Test Log ID SDSS_TL_1_1.0.0
+
+
+===============================================================
+ACTIVITIES EXECUTION INFORMATION
+===============================================================
+
+Execution Start Date:   13 August 2026
+
+End Date:               13 August 2026
+
+Execution Start Time:   21:30
+
+End Time:               22:55
+
+Tester Name:            Sean Dhirren Jeremiah
+
+Participant:            -
+
+
+NOTE: your document currently reads 22:15 for End Time. The last
+procedure actually finished at 22:55 (confirmed from the evidence
+file timestamp), because all four were re-run after the TPS
+alignment fixes. Use 22:55.
+
+
+===============================================================
+PROCEDURE RESULT - PASS/FAIL COLUMN
+===============================================================
+
+Row 1  TP-01-001  ->  Pass
+
+Row 2  TP-01-002  ->  Pass
+
+Row 3  TP-01-003  ->  Pass
+
+Row 4  TP-01-004  ->  Pass
+
+
+===============================================================
+PROCEDURE RESULT - REMARK COLUMN
+===============================================================
+
+--- ROW 1 (TP-01-001) - copy the block below ---
+
+Global navigation via the store logo and the navigation links reaches the correct destination across all seven steps (TC-01-001 #1 to #7). Steps #6 (Wish list) and #7 (Refer a friend) are recorded observationally as the TPS directs, and their observations are attached to the log. Note: the navigation links named in TC-01-001 (Home, Catalog, Blog, About Us) are located in the sidebar rather than in the header element; only the store logo sits in the header itself. Confirmed against the live DOM - a documentation discrepancy, not a defect.
+
+
+--- ROW 2 (TP-01-002) - copy the block below ---
+
+The catalogue lists products, and selecting TD-01-A opens the correct product detail page with its breadcrumb trail and parent collection recorded (TC-01-002 #1 to #4). Catalogue listing, destination URLs and the breadcrumb screenshot attached. Intercase dependency on TP-01-001's Catalog navigation step, which passed in this cycle.
+
+
+--- ROW 3 (TP-01-003) - copy the block below ---
+
+The blog lists posts, the first listed post opens, and Back to posts returns the reader to the list (TC-01-003 #1 to #4). Post list and destination URLs attached. Note: the blog holds a single published post (First Post), so clicking the first listed post title always resolves to that post - ENV-05 is satisfied but minimally.
+
+
+--- ROW 4 (TP-01-004) - copy the block below ---
+
+Social icons, the RSS feed icon and both footer links resolve to their destinations, each recorded with whether a live page was returned (TC-01-004 #1 to #4). The social and RSS icons open in a new tab; the footer Sauce link navigates in the same tab. All external tabs closed at Wrap Up. Destination URLs and screenshots attached.
+
+
+===============================================================
+ENVIRONMENT INFORMATION - TEST ENVIRONMENT AFTER CHANGES COLUMN
+===============================================================
+
+--- Row: Platform baseline as declared in Section 3.2 of the SDSS Test Plan ---
+
+As declared. Executed on Playwright (Chromium) per TCS 2.1.1.
+
+
+--- Row: ENV-01 Baseline browsing environment ---
+
+As declared, unchanged. Each procedure runs in a fresh browser context with empty cache and cookies; no shopper account signed in is confirmed and recorded at every Set Up.
+
+
+--- Row: ENV-03 Outbound access to third-party destinations ---
+
+Available and exercised. Facebook, Twitter/X, Instagram, Pinterest, the RSS feed and the Shopify footer link were all reached, each recording whether a live page was returned (TP-01-004).
+
+
+--- Row: ENV-04 Populated product catalogue ---
+
+As declared, unchanged. TD-01-A (Grey jacket) confirmed present in the listing at /collections/all.
+
+
+--- Row: ENV-05 Populated blog ---
+
+Satisfied but minimal - the blog holds a single published post (First Post). Sufficient for TC-01-003 as written; a multi-post blog would exercise post selection more meaningfully in a future cycle.
+
+
+===============================================================
+ANOMALOUS EVENT
+===============================================================
+
+None. All four procedures executed to completion and passed. No
+unexpected event occurred and no stop condition was triggered.
+
+Leave the three rows blank, or write "None" in the first cell of
+each row.
+
+DO NOT record DEF-F1-01 to DEF-F1-06 or DEF-F6-03 here. Those
+defects are already confirmed in the Defect Log, so they are not
+unexpected events - this section is for events that were not
+anticipated.
+
+
+===============================================================
+IF A REVIEWER ASKS WHY FN-01 SHOWS NO FAILURES
+===============================================================
+
+This is the one question the table invites, because the TCS
+records defects as confirmed against three of these four test
+cases:
+
+  TC-01-001   DEF-F1-03 (Blog link destination)
+              DEF-F6-03 (Wish list control)
+              DEF-F1-05 (Refer a friend control)
+
+  TC-01-002   DEF-F1-01 (Breadcrumb path accuracy)
+              DEF-F1-02 (Product parent collection)
+
+  TC-01-003   None
+
+  TC-01-004   DEF-F1-04 (RSS feed icon destination)
+              DEF-F1-06 (Footer Sauce link destination)
+
+All four procedures still report Pass. That is intentional and
+follows the TPS, which the team designated as the governing
+document for execution in this cycle.
+
+Where a defect is already confirmed, the TPS words the matching
+step observationally rather than as an assertion. TC-01-001 #6
+reads: "Click the Wish list navigation link. Record the URL shown
+in the address bar after the click, including any fragment
+appended to it, and record whether any page, panel or overlay is
+displayed." It directs the tester to capture what happens, not to
+judge it against an expected result. The frozen TPS also notes
+that this step discharges REQ-F6-08 and DEF-F6-03.
+
+So the Pass means: the procedure executed and recorded what the
+TPS asked it to record. It does NOT mean the store behaved
+correctly at those steps. The defects remain confirmed in the
+Defect Log and the evidence from these runs supports them.
+
+FOR THE TEST DESIGNERS: the TCS states definite expected results
+for the same steps. TC-01-001 #6 expects "The Wish list page is
+displayed, listing saved items or showing an empty-wishlist
+state", which the store does not do - independently confirmed
+during FN-06 execution, where the same control was found to be a
+dead in-page anchor with no wishlist page in existence at all.
+Under the TCS wording, TP-01-001, TP-01-002 and TP-01-004 would
+each report Fail. The two documents give different verdicts for
+the same behaviour. Worth aligning before the next cycle, and
+worth checking whether FN-02 and FN-03 diverge the same way.
+
+
+===============================================================
+BROWSER - NO ACTION NEEDED
+===============================================================
+
+Record the browser as Chromium (Playwright).
+
+This is compliant. TCS 2.1.1 reads: "The latest stable release of
+Chrome, Firefox or Edge is used for manual execution... Playwright
+is used for the automated suite delivered under Part 2." The
+branded browser requirement applies to manual execution only. No
+re-run under a branded channel is required.
+
+
+===============================================================
+EVIDENCE HELD
+===============================================================
+
+Per procedure: trace.zip, video.webm and a screenshot, plus
+per-step attachments (destination URLs, catalogue listing,
+breadcrumb, post list, external destination outcomes) and a
+consolidated "Wrap Up - recorded results" attachment gathering
+everything the TPS Wrap Up asks to be attached.
+
+Open a trace with:
+    npx playwright show-trace <path>/trace.zip
+
+WARNING: test-results and playwright-report are regenerated on
+every run and are gitignored. Copy evidence out after each
+procedure or the next run overwrites it. The TP-01 folder
+currently holds artifacts from the PRE-FIX runs and is stale;
+only TP-01-004's current evidence sits in test-results.

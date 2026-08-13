@@ -22,40 +22,63 @@ test.describe('FN-01 Product Browsing and Navigation', () => {
     const header = new HeaderBar(page);
     const sidebar = new SidebarNav(page);
 
-    await test.step('Set Up — open the store home page', async () => {
+    // The Wrap Up has to attach "the recorded destination URLs, the page
+    // title recorded at Step 7, the responses recorded at Steps 8 and 9",
+    // so each step keeps what it observed rather than only attaching it
+    // in isolation. Set Up numbering follows the TPS: step 7 is Blog,
+    // step 8 Wish list, step 9 Refer a friend.
+    const destinations: string[] = [];
+    let blogPageTitle = '';
+    let wishListResponse = '(not recorded)';
+    let referAFriendResponse = '(not recorded)';
+
+    await test.step('Set Up — clear state, confirm no shopper signed in, open the store home page', async () => {
+      // ENV-01: Playwright gives every test a fresh context, so cache and
+      // cookies start empty. The TPS also asks to confirm no shopper
+      // account is signed in — recorded here rather than assumed, since
+      // "signed out" is a precondition of the whole procedure.
       await header.gotoHome();
-      await recordUrl(page, testInfo, 'home page');
+      const url = await recordUrl(page, testInfo, 'home page');
+      destinations.push(`Set Up (home): ${url}`);
+
+      const signedOut = await header.logInLink.isVisible().catch(() => false);
+      await testInfo.attach('ENV-01 precondition — no shopper account signed in', {
+        body: `"Log In" control visible (i.e. signed out): ${signedOut}`,
+        contentType: 'text/plain',
+      });
+      expect(signedOut, 'ENV-01: no shopper account should be signed in at Set Up').toBe(true);
     });
 
     await test.step('TC-01-001 #3 — Catalog link', async () => {
       await sidebar.catalogLink.click();
-      await recordUrl(page, testInfo, 'Catalog');
+      destinations.push(`Catalog [#3]: ${await recordUrl(page, testInfo, 'Catalog')}`);
       await expect(page).toHaveURL(new RegExp(`${ROUTES.catalog}$`));
     });
 
     await test.step('TC-01-001 #1 — store logo returns to home', async () => {
       await header.logo.click();
-      await recordUrl(page, testInfo, 'store logo');
+      destinations.push(`Store logo [#1]: ${await recordUrl(page, testInfo, 'store logo')}`);
       await expect(page).toHaveURL(/sauce-demo\.myshopify\.com\/$/);
     });
 
     await test.step('TC-01-001 #5 — About Us link', async () => {
       await sidebar.aboutUsLink.click();
-      await recordUrl(page, testInfo, 'About Us');
+      destinations.push(`About Us [#5]: ${await recordUrl(page, testInfo, 'About Us')}`);
       await expect(page).toHaveURL(new RegExp(`${ROUTES.aboutUs}$`));
     });
 
     await test.step('TC-01-001 #2 — Home link from About Us', async () => {
       await sidebar.homeLink.click();
-      await recordUrl(page, testInfo, 'Home');
+      destinations.push(`Home [#2]: ${await recordUrl(page, testInfo, 'Home')}`);
       await expect(page).toHaveURL(/sauce-demo\.myshopify\.com\/$/);
     });
 
     await test.step('TC-01-001 #4 — Blog link and destination page title', async () => {
       await sidebar.blogLink.click();
-      await recordUrl(page, testInfo, 'Blog');
+      destinations.push(`Blog [#4]: ${await recordUrl(page, testInfo, 'Blog')}`);
+      blogPageTitle = await page.title();
       await testInfo.attach('Blog page title', {
-        body: await page.title(),
+        body: blogPageTitle,
         contentType: 'text/plain',
       });
       await expect(page).toHaveURL(new RegExp(ROUTES.blog));
@@ -81,6 +104,11 @@ test.describe('FN-01 Product Browsing and Navigation', () => {
         body: `before: ${urlBefore}\nafter:  ${urlAfter}`,
         contentType: 'text/plain',
       });
+      wishListResponse =
+        `URL after click: ${urlAfter}\n` +
+        `fragment appended: ${urlAfter.includes('#') ? urlAfter.slice(urlAfter.indexOf('#')) : '(none)'}\n` +
+        `page, panel or overlay displayed: ${overlayVisible}`;
+      destinations.push(`Wish list [#6]: ${urlAfter}`);
       await testInfo.attach('Wish list — page/panel/overlay displayed', {
         body: `overlay-like element visible: ${overlayVisible}`,
         contentType: 'text/plain',
@@ -153,6 +181,37 @@ test.describe('FN-01 Product Browsing and Navigation', () => {
       await testInfo.attach('Refer a friend — screenshot', {
         body: await page.screenshot({ fullPage: true }),
         contentType: 'image/png',
+      });
+
+      referAFriendResponse =
+        `URL after click: ${urlAfter}\n` +
+        `fragment appended: ${urlAfter.includes('#') ? urlAfter.slice(urlAfter.indexOf('#')) : '(none)'}\n` +
+        `referral link or shareable mechanism produced: ${mechanismProduced}\n` +
+        (mechanismProduced
+          ? `mechanism: ${mechanismHref ?? '(no href/value found)'}\nresolved to a live destination when used: ${resolvesLive}`
+          : 'absence recorded, per the TPS ("Where none is produced, record its absence")');
+      destinations.push(`Refer a friend [#7]: ${urlAfter}`);
+    });
+
+    await test.step('Wrap Up — return to the store home page, attach the recorded results', async () => {
+      await header.gotoHome();
+      const homeUrl = await recordUrl(page, testInfo, 'Wrap Up — store home page');
+
+      // The TPS Wrap Up asks for the recorded destination URLs, the page
+      // title from Set Up step 7 (Blog), and the responses from steps 8 and
+      // 9 (Wish list, Refer a friend) to be attached to the test log. Each
+      // step already attaches its own evidence; this consolidates them into
+      // one record so the log entry can be filled from a single attachment
+      // rather than by reassembling nine separate ones.
+      await testInfo.attach('TP-01-001 Wrap Up — recorded results', {
+        body:
+          `DESTINATION URLs RECORDED\n${destinations.map((d) => `  ${d}`).join('\n')}\n` +
+          `  Wrap Up (home): ${homeUrl}\n\n` +
+          `PAGE TITLE AT SET UP STEP 7 (Blog)\n  ${blogPageTitle || '(not recorded)'}\n\n` +
+          `RESPONSE AT SET UP STEP 8 (Wish list)\n${wishListResponse.split('\n').map((l) => `  ${l}`).join('\n')}\n\n` +
+          `RESPONSE AT SET UP STEP 9 (Refer a friend)\n${referAFriendResponse.split('\n').map((l) => `  ${l}`).join('\n')}\n\n` +
+          'Screenshots captured under SPR-04 are attached to their own steps above.',
+        contentType: 'text/plain',
       });
     });
   });
