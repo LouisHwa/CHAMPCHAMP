@@ -1,3 +1,4 @@
+import type { Locator } from '@playwright/test';
 import { test, expect } from '../../utils/pacedTest';
 import { HeaderBar } from '../../pages/HeaderBar';
 import { ProductPage } from '../../pages/ProductPage';
@@ -47,28 +48,51 @@ test.describe('FN-04 Cart Management', () => {
     const cart = new CartPage(page);
 
     await withFailureEvidence(page, testInfo, async () => {
+      /**
+       * Clicks a control that makes the STORE navigate, and waits for that
+       * navigation to land before anything else runs. Update is a form POST
+       * and Remove is an <a href="/cart/change?...">, so both reload the page
+       * on their own; issuing the next goto() or read while that is still in
+       * flight produces "Execution context was destroyed" or an interrupted
+       * navigation, either of which surfaces as an automation failure rather
+       * than a finding about the store.
+       */
+      async function clickAndSettle(control: Locator) {
+        const navigated = page.waitForEvent('framenavigated', { timeout: 15_000 }).catch(() => null);
+        await control.click();
+        await navigated;
+        await page.waitForLoadState('domcontentloaded').catch(() => {});
+      }
+
       await test.step('Set Up — confirm empty cart baseline', async () => {
         await cart.goto();
         expect(await cart.lineCount()).toBe(0);
         await header.gotoHome();
       });
 
-      await test.step('Set Up — stock quantity display on the PDP (evidence only)', async () => {
-        // The TPS's own text carries this generic stock-display check
-        // into TP-04-001's Set Up (tagged [TC-04-004 #1] there, which
-        // matches TP-04-002's dedicated stock check verbatim) — recorded
-        // here for completeness with the document as written, but this
-        // procedure's actual TCs (001-003) don't otherwise depend on it.
-        // TPS: "Select TD-04-A FROM THE CATALOGUE" - reach the PDP the way
-        // the step describes rather than jumping straight to the handle.
+      await test.step('Set Up — open TD-04-A from the catalogue', async () => {
+        // TPS Set Up step 3: "Select TD-04-A FROM THE CATALOGUE" — reach the
+        // PDP the way the step describes rather than jumping straight to the
+        // handle. TC-04-001 #1 then records the unit price from this page.
+        //
+        // This step used to be labelled a stock-quantity check, on the basis
+        // that the TPS carried one into TP-04-001's Set Up tagged
+        // [TC-04-004 #1]. The 11 August TPS does not: TP-04-001's Set Up runs
+        // 1-13 with no stock step, and the stock check belongs to TP-04-002
+        // Set Up step 3, which owns TC-04-004 #1. Presenting it here made the
+        // report show a step with no counterpart in the document and appear
+        // to discharge another procedure's coverage item. The reading is kept
+        // as incidental evidence only — it asserts nothing and carries no tag.
         await catalog.goto();
-        await catalog.productLink(CART_TEST_DATA.productA).click();
-        await page.waitForLoadState('domcontentloaded');
+        await clickAndSettle(catalog.productLink(CART_TEST_DATA.productA));
 
         const stockIndicator = page.locator('#buy').getByText(/\d+\s*(in stock|available|left)/i);
         const stockShown = await stockIndicator.isVisible().catch(() => false);
-        await testInfo.attach('Stock quantity displayed on PDP', {
-          body: `stock indicator visible: ${stockShown}`,
+        await testInfo.attach('PDP opened from the catalogue (incidental: stock display)', {
+          body:
+            `product: ${CART_TEST_DATA.productA} (TD-04-A)\n` +
+            `destination: ${page.url()}\n` +
+            `stock indicator visible: ${stockShown} (incidental observation; TC-04-004 #1 is discharged by TP-04-002)`,
           contentType: 'text/plain',
         });
       });
@@ -125,7 +149,7 @@ test.describe('FN-04 Cart Management', () => {
 
         await cart.goto();
         await cart.lineQuantityInput(0).fill('1');
-        await cart.updateButton.click();
+        await clickAndSettle(cart.updateButton);
         await cart.goto();
 
         const committedQty = await cart.lineQuantityInput(0).inputValue();
@@ -143,7 +167,7 @@ test.describe('FN-04 Cart Management', () => {
 
       await test.step('TC-04-001 #3 — commit quantity 3, without removing the product', async () => {
         await cart.lineQuantityInput(0).fill('3');
-        await cart.updateButton.click();
+        await clickAndSettle(cart.updateButton);
         await cart.goto();
 
         const committedQty = await cart.lineQuantityInput(0).inputValue();
@@ -160,7 +184,7 @@ test.describe('FN-04 Cart Management', () => {
       });
 
       await test.step('TC-04-002 #1 — remove, re-add the product, confirm one line displayed', async () => {
-        await cart.removeLine(0).click();
+        await clickAndSettle(cart.removeLine(0));
         await cart.goto();
         expect(await cart.lineCount()).toBe(0);
 
@@ -186,7 +210,7 @@ test.describe('FN-04 Cart Management', () => {
 
       await test.step('TC-04-002 #2 — set quantity to 0, line removed, order total returns to nothing', async () => {
         await cart.lineQuantityInput(0).fill('0');
-        await cart.updateButton.click();
+        await clickAndSettle(cart.updateButton);
         await cart.goto();
 
         const closingLineCount = await cart.lineCount();
@@ -214,7 +238,7 @@ test.describe('FN-04 Cart Management', () => {
 
         await cart.goto();
         await cart.lineQuantityInput(0).fill('2');
-        await cart.updateButton.click();
+        await clickAndSettle(cart.updateButton);
         await cart.goto();
 
         const baselineQty = await cart.lineQuantityInput(0).inputValue();
@@ -248,19 +272,30 @@ test.describe('FN-04 Cart Management', () => {
       for (const invalid of invalidValues) {
         await test.step(`${invalid.step} — quantity "${invalid.value || '(empty)'}"`, async () => {
           await cart.lineQuantityInput(0).fill(invalid.value);
-          await cart.updateButton.click();
+          await clickAndSettle(cart.updateButton);
           await cart.goto();
 
           const messageLocator = page.locator('#cart .error, #cart .message, #cart [class*="error"]');
           const messageShown = (await messageLocator.count()) > 0;
           const messageText = messageShown ? ((await messageLocator.first().innerText()) ?? '').trim() : null;
-          const quantityAfter = await cart.lineQuantityInput(0).inputValue();
-          const lineTotalAfter = parseMoney(await cart.lineTotal(0).textContent());
+          // Read back defensively. If an invalid value ever removed the line
+          // outright, lineQuantityInput(0) would throw and abort the whole
+          // procedure — taking the remaining invalid values with it and
+          // discharging none of them. A vanished line is itself a finding,
+          // so record it and let the assertions below report it.
+          const lineStillPresent = (await cart.lineCount()) > 0;
+          const quantityAfter = lineStillPresent
+            ? await cart.lineQuantityInput(0).inputValue().catch(() => '(unreadable)')
+            : '(line removed)';
+          const lineTotalAfter = lineStillPresent
+            ? parseMoney(await cart.lineTotal(0).textContent().catch(() => null))
+            : NaN;
 
           await testInfo.attach(`Quantity "${invalid.value || '(empty)'}" — system response`, {
             body:
               `explicit validation message shown: ${messageShown}\n` +
               `message text: ${messageText ?? '(none)'}\n` +
+              `cart line still present: ${lineStillPresent}\n` +
               `quantity field value after commit: ${quantityAfter} (baseline was 2)\n` +
               `line total after commit: ${lineTotalAfter} (2 x ${unitPrice} = ${2 * unitPrice})\n` +
               `also expected by the TCS: ${invalid.alsoExpects}`,
@@ -291,7 +326,7 @@ test.describe('FN-04 Cart Management', () => {
         await cart.goto();
         const remaining = await cart.lineCount();
         for (let i = remaining - 1; i >= 0; i--) {
-          await cart.removeLine(i).click();
+          await clickAndSettle(cart.removeLine(i));
         }
         await cart.goto();
         // TPS Wrap Up: "Remove the test product from the cart and CONFIRM
