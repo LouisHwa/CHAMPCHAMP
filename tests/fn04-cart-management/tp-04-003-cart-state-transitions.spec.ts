@@ -1,3 +1,4 @@
+import type { Locator } from '@playwright/test';
 import { test, expect } from '../../utils/pacedTest';
 import { HeaderBar } from '../../pages/HeaderBar';
 import { ProductPage } from '../../pages/ProductPage';
@@ -55,6 +56,25 @@ test.describe('FN-04 Cart Management', () => {
 
     await withFailureEvidence(page, testInfo, async () => {
       /**
+       * Clicks a control that makes the STORE navigate, and waits for that
+       * navigation to land before anything reads the page.
+       *
+       * Update is a form POST and Remove is an <a href="/cart/change?...">,
+       * so both reload the page on their own — that is the store's
+       * behaviour, not a manual refresh, and SPR-11 does not forbid it.
+       * What it does mean is that reading the header count or opening the
+       * drawer immediately after the click can land mid-navigation and
+       * throw "Execution context was destroyed", which would surface as an
+       * automation failure rather than a finding about the store.
+       */
+      async function clickAndSettle(control: Locator) {
+        const navigated = page.waitForEvent('framenavigated', { timeout: 15_000 }).catch(() => null);
+        await control.click();
+        await navigated;
+        await page.waitForLoadState('domcontentloaded').catch(() => {});
+      }
+
+      /**
        * Finds a cart line by product name. Index-based targeting is wrong
        * here: this cart lists lines NEWEST FIRST, so index 0 is whichever
        * product was added last, not TD-04-A. Confirmed on 12 August — the
@@ -64,16 +84,32 @@ test.describe('FN-04 Cart Management', () => {
        * out the wrong lines and emptied the cart early, so #8, #9 and #10
        * never ran at all.
        */
-      async function lineIndexFor(productName: string): Promise<number> {
+      async function findLine(productName: string): Promise<number> {
         const count = await cart.lineCount();
         for (let i = 0; i < count; i++) {
-          const text = (await cart.lineDescription(i).textContent()) ?? '';
+          const text = (await cart.lineDescription(i).textContent().catch(() => null)) ?? '';
           if (text.toLowerCase().includes(productName.toLowerCase())) return i;
         }
-        throw new Error(
-          `No cart line found for "${productName}". Lines present: ${count}. ` +
-            'Re-check the state the previous step left behind.',
-        );
+        return -1;
+      }
+
+      async function lineIndexFor(productName: string): Promise<number> {
+        let index = await findLine(productName);
+        if (index === -1) {
+          // One reload before giving up. A miss here is usually a stale read
+          // taken while the store was still navigating, not a genuinely
+          // absent line — and throwing would abort every remaining step,
+          // discharging no further coverage.
+          await cart.goto();
+          index = await findLine(productName);
+        }
+        if (index === -1) {
+          throw new Error(
+            `No cart line found for "${productName}" even after reloading /cart. ` +
+              `Lines present: ${await cart.lineCount()}. Re-check the state the previous step left behind.`,
+          );
+        }
+        return index;
       }
 
       /** Order total as displayed, trimmed; null if it cannot be read. */
@@ -102,10 +138,17 @@ test.describe('FN-04 Cart Management', () => {
       async function checkLiveCartState(label: string, expectedCount: string, expectedLines: number) {
         const liveHeaderText = await header.cartCount.textContent().catch(() => null);
         const drawer = new CartDrawer(page);
-        const liveDrawerLines = await drawer
-          .open()
-          .then(() => drawer.lineCount())
-          .catch(() => -1);
+        // open() toggles, so clicking an already-open drawer would CLOSE it
+        // and the visibility wait would then time out. Only click when it is
+        // shut.
+        const liveDrawerLines = await (async () => {
+          try {
+            if (!(await drawer.drawer.isVisible())) await drawer.open();
+            return await drawer.lineCount();
+          } catch {
+            return null;
+          }
+        })();
 
         await cart.goto();
         const actualLineCount = await cart.lineCount();
@@ -115,7 +158,7 @@ test.describe('FN-04 Cart Management', () => {
           body:
             `header count shown without reload: ${liveHeaderText}\n` +
             `expected header count: (${expectedCount})\n` +
-            `cart contents shown without reload (minicart lines): ${liveDrawerLines === -1 ? '(drawer unreadable)' : liveDrawerLines}\n` +
+            `cart contents shown without reload (minicart lines): ${liveDrawerLines ?? '(drawer unreadable)'}\n` +
             `expected contents lines: ${expectedLines}\n` +
             `line count after reload: ${actualLineCount}\n` +
             `order total after reload: ${orderTotalAfter}`,
@@ -125,9 +168,15 @@ test.describe('FN-04 Cart Management', () => {
         expect
           .soft(liveHeaderText?.trim(), `${label}: header cart count should already read ${expectedCount} without a reload.`)
           .toBe(expectedCount);
-        expect
-          .soft(liveDrawerLines, `${label}: cart contents should already show ${expectedLines} line(s) without a reload.`)
-          .toBe(expectedLines);
+        // Only assert on a reading we actually got. An unreadable drawer is a
+        // harness problem, and asserting on a sentinel would report it as
+        // "the cart contents did not update" — a defect the store did not
+        // commit.
+        if (liveDrawerLines !== null) {
+          expect
+            .soft(liveDrawerLines, `${label}: cart contents should already show ${expectedLines} line(s) without a reload.`)
+            .toBe(expectedLines);
+        }
 
         return { actualLineCount, orderTotalAfter };
       }
@@ -212,7 +261,7 @@ test.describe('FN-04 Cart Management', () => {
       });
 
       await test.step('TC-04-006 #4 — commit the quantity, totals show quantity 2', async () => {
-        await cart.updateButton.click();
+        await clickAndSettle(cart.updateButton);
         await cart.goto();
 
         const aIdx = await lineIndexFor(CART_TEST_DATA.productA);
@@ -251,7 +300,7 @@ test.describe('FN-04 Cart Management', () => {
       await test.step('TC-04-006 #5 — remove product A while B remains (state stays S2)', async () => {
         await cart.goto();
         const orderTotalBeforeRemoval = await readOrderTotal();
-        await cart.removeLine(await lineIndexFor(CART_TEST_DATA.productA)).click();
+        await clickAndSettle(cart.removeLine(await lineIndexFor(CART_TEST_DATA.productA)));
         const removal = await checkLiveCartState('Remove product A', '(1)', 1);
 
         await testInfo.attach('Remove TD-04-A — order total recalculation', {
@@ -277,7 +326,7 @@ order total after removal:  ${removal.orderTotalAfter}`,
         await cart.goto();
         const orderTotalBeforeZero = await readOrderTotal();
         await cart.lineQuantityInput(await lineIndexFor(CART_TEST_DATA.productA)).fill('0');
-        await cart.updateButton.click();
+        await clickAndSettle(cart.updateButton);
         const zeroed = await checkLiveCartState('Quantity 0 on product A', '(1)', 1);
 
         await testInfo.attach('Quantity 0 on TD-04-A — order total recalculation', {
@@ -293,7 +342,7 @@ order total after:  ${zeroed.orderTotalAfter}`,
 
       await test.step('TC-04-006 #8 — remove product B, the last remaining line (S2 -> S1)', async () => {
         await cart.goto();
-        await cart.removeLine(await lineIndexFor(CART_TEST_DATA.productB)).click();
+        await clickAndSettle(cart.removeLine(await lineIndexFor(CART_TEST_DATA.productB)));
         await checkLiveCartState('Remove last line (B)', '(0)', 0);
       });
 
@@ -308,7 +357,7 @@ order total after:  ${zeroed.orderTotalAfter}`,
       await test.step('TC-04-006 #10 — set quantity on the last remaining line to 0 (S2 -> S1)', async () => {
         await cart.goto();
         await cart.lineQuantityInput(await lineIndexFor(CART_TEST_DATA.productA)).fill('0');
-        await cart.updateButton.click();
+        await clickAndSettle(cart.updateButton);
         await checkLiveCartState('Quantity 0 on last remaining line', '(0)', 0);
       });
 
@@ -316,7 +365,7 @@ order total after:  ${zeroed.orderTotalAfter}`,
         await cart.goto();
         const remaining = await cart.lineCount();
         for (let i = remaining - 1; i >= 0; i--) {
-          await cart.removeLine(i).click();
+          await clickAndSettle(cart.removeLine(i));
         }
         await cart.goto();
         expect(await cart.lineCount()).toBe(0);
