@@ -1,3 +1,4 @@
+import type { Locator } from '@playwright/test';
 import { test, expect } from '../../utils/pacedTest';
 import { HeaderBar } from '../../pages/HeaderBar';
 import { ProductPage } from '../../pages/ProductPage';
@@ -51,8 +52,27 @@ test.describe('FN-04 Cart Management', () => {
     let cartQuantity: string | null = null;
     let cartLineTotal: number = NaN;
     let cartOrderTotal: number = NaN;
+    // #5 must know whether #4 actually got to the checkout. If it did not,
+    // both steps would otherwise be reading the CART page, where the item,
+    // the total and the order note are all present — so every check would
+    // pass without the handoff ever having been exercised.
+    let reachedCheckout = false;
 
     await withFailureEvidence(page, testInfo, async () => {
+      /**
+       * Clicks a control that makes the STORE navigate, and waits for that
+       * navigation to land before anything reads the page. Update and Remove
+       * are a form POST and an <a href="/cart/change?...">; reading either
+       * mid-navigation throws "Execution context was destroyed", which would
+       * surface as an automation failure rather than a finding.
+       */
+      async function clickAndSettle(control: Locator) {
+        const navigated = page.waitForEvent('framenavigated', { timeout: 15_000 }).catch(() => null);
+        await control.click();
+        await navigated;
+        await page.waitForLoadState('domcontentloaded').catch(() => {});
+      }
+
       await test.step('Set Up — confirm empty cart baseline', async () => {
         await cart.goto();
         expect(await cart.lineCount()).toBe(0);
@@ -134,11 +154,24 @@ test.describe('FN-04 Cart Management', () => {
             .soft(cartOrderTotal, 'SPR-12: the order total should equal the sum of the line totals.')
             .toBeCloseTo(cartLineTotal, 2);
         }
+
+        // TCS #2 also requires the correct PRICE. unitPrice was recorded off
+        // the PDP and attached, but nothing compared it with the cart, so a
+        // line carrying the wrong price would have passed.
+        const qty = Number(cartQuantity);
+        if (!Number.isNaN(unitPrice) && !Number.isNaN(cartLineTotal) && Number.isFinite(qty) && qty > 0) {
+          expect
+            .soft(
+              cartLineTotal,
+              `TC-04-007 #2 expects the cart line total to match the PDP price (${qty} x ${unitPrice}).`,
+            )
+            .toBeCloseTo(unitPrice * qty, 2);
+        }
       });
 
       await test.step('TC-04-007 #3 — enter order note, record acceptance', async () => {
         await cart.noteField.fill(CART_TEST_DATA.orderNote);
-        await cart.updateButton.click();
+        await clickAndSettle(cart.updateButton);
         await cart.goto();
         const noteValue = await cart.noteField.inputValue();
         await testInfo.attach('Order note — persisted value', {
@@ -151,44 +184,92 @@ test.describe('FN-04 Cart Management', () => {
       await test.step('TC-04-007 #4 — Checkout opens with items, quantities, subtotal, total', async () => {
         await cart.checkoutButton.click();
         await page.waitForURL(/\/checkouts\//, { timeout: 20_000 }).catch(() => null);
+
+        // Confirm we actually LEFT the cart before reading anything as
+        // checkout evidence. Previously the waitForURL failure was swallowed
+        // and the step read whatever page it was on — which, if checkout had
+        // not opened, was still /cart. The cart shows the item, the quantity
+        // and the total, so all three comparisons below would have passed
+        // without the handoff ever being exercised.
+        const checkoutUrl = page.url();
+        reachedCheckout = /\/checkouts\//.test(checkoutUrl);
+
         const summaryText = await page.locator('body').innerText();
         const showsItem = summaryText.toLowerCase().includes(CART_TEST_DATA.productV.toLowerCase());
         // Compare on numeric value, not the formatted string: the cart and
         // the checkout render currency differently.
         const checkoutAmounts = (summaryText.match(/\d[\d,]*\.\d{2}/g) ?? []).map((a) => parseMoney(a));
         const showsTotal = checkoutAmounts.some((a) => Math.abs(a - cartOrderTotal) < 0.01);
-        const showsQuantity = cartQuantity !== null && new RegExp(`\\b${cartQuantity}\\b`).test(summaryText);
+        // Scoped to the text immediately around the product name. A bare
+        // \b1\b over the whole page matches a standalone "1" almost anywhere
+        // on a checkout — an address, a date, a price — so the check passed
+        // regardless of the quantity actually shown.
+        const nameAt = summaryText.toLowerCase().indexOf(CART_TEST_DATA.productV.toLowerCase());
+        const nearItem = nameAt >= 0 ? summaryText.slice(nameAt, nameAt + 200) : '';
+        const showsQuantity = cartQuantity !== null && new RegExp(`\\b${cartQuantity}\\b`).test(nearItem);
+
         await testInfo.attach('Checkout page — shows cart item', {
           body:
+            `destination URL: ${checkoutUrl}\n` +
+            `reached the checkout: ${reachedCheckout}\n` +
             `cart recorded - item: ${CART_TEST_DATA.productV} / variant: ` +
             `${CART_TEST_DATA.variant1.size} ${CART_TEST_DATA.variant1.colour} / quantity: ${cartQuantity} / ` +
             `line total: ${cartLineTotal} / order total: ${cartOrderTotal}\n` +
             `checkout shows item: ${showsItem}\n` +
-            `checkout shows quantity: ${showsQuantity}\n` +
+            `checkout shows quantity: ${showsQuantity} (searched near the item name)\n` +
             `checkout shows the cart order total: ${showsTotal}\n` +
             `money amounts found on checkout: ${checkoutAmounts.join(', ') || '(none)'}`,
           contentType: 'text/plain',
         });
+
+        expect
+          .soft(reachedCheckout, `TC-04-007 #4 expects Checkout to open the checkout page. Landed on: ${checkoutUrl}`)
+          .toBe(true);
+
         // TCS #4: "the checkout opens displaying the SAME ITEMS, QUANTITIES
-        // AND TOTAL as the cart." Only item-name presence was checked before,
-        // so a different quantity or total at checkout would have passed.
-        expect.soft(showsItem, 'TC-04-007 #4 expects the checkout to display the same item as the cart.').toBe(true);
-        expect
-          .soft(showsQuantity, 'TC-04-007 #4 expects the checkout to display the same quantity as the cart.')
-          .toBe(true);
-        expect
-          .soft(showsTotal, 'TC-04-007 #4 expects the checkout to display the same total as the cart.')
-          .toBe(true);
+        // AND TOTAL as the cart." Only evaluated once we know we are on the
+        // checkout — comparing the cart against itself would pass and prove
+        // nothing.
+        if (reachedCheckout) {
+          expect.soft(showsItem, 'TC-04-007 #4 expects the checkout to display the same item as the cart.').toBe(true);
+          expect
+            .soft(showsQuantity, 'TC-04-007 #4 expects the checkout to display the same quantity as the cart.')
+            .toBe(true);
+          expect
+            .soft(showsTotal, 'TC-04-007 #4 expects the checkout to display the same total as the cart.')
+            .toBe(true);
+        }
       });
 
       await test.step('TC-04-007 #5 — checkout summary shows the order note', async () => {
         const summaryText = await page.locator('body').innerText();
         const noteVisible = summaryText.includes(CART_TEST_DATA.orderNote);
         await testInfo.attach('Checkout page — order note visibility', {
-          body: `order note "${CART_TEST_DATA.orderNote}" visible on checkout page: ${noteVisible}`,
+          body:
+            `reached the checkout: ${reachedCheckout}\n` +
+            `page read: ${page.url()}\n` +
+            `order note "${CART_TEST_DATA.orderNote}" visible: ${noteVisible}`,
           contentType: 'text/plain',
         });
-        expect.soft(noteVisible, 'TC-04-007 expects the cart order note to appear in the checkout summary.').toBe(true);
+
+        // Guarded on reaching the checkout, and this is the step where it
+        // matters most: the cart page renders the note inside its own
+        // textarea, so if #4 never left /cart this check would find the note
+        // and PASS — masking DEF-F4-07, the one defect this procedure exists
+        // to confirm.
+        if (reachedCheckout) {
+          expect
+            .soft(noteVisible, 'TC-04-007 #5 expects the cart order note to appear in the checkout summary.')
+            .toBe(true);
+        } else {
+          expect
+            .soft(
+              reachedCheckout,
+              'TC-04-007 #5 could not be evaluated: the checkout never opened, so the order note was not checked. ' +
+                'This is an execution failure, not a finding about the store.',
+            )
+            .toBe(true);
+        }
       });
 
       await test.step('Wrap Up — navigate away from checkout, empty cart, return home', async () => {
@@ -196,7 +277,7 @@ test.describe('FN-04 Cart Management', () => {
         await cart.goto();
         const remaining = await cart.lineCount();
         for (let i = remaining - 1; i >= 0; i--) {
-          await cart.removeLine(i).click();
+          await clickAndSettle(cart.removeLine(i));
         }
         await cart.goto();
         // TPS Wrap Up: "Empty the cart and CONFIRM THAT IT RETURNS to the
