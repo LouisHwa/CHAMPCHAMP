@@ -13,9 +13,14 @@ import { recordUrl } from '../../utils/evidence';
  * Intercase dependency: TP-02-002 must have run (gallery image capture
  * on a colour change).
  *
- * Gallery images are captured before/after the colour change as evidence
- * only, per SPR-07 — same reasoning as TP-02-002: whether this theme
- * actually serves a distinct photo per colour hasn't been confirmed.
+ * EXPECTED TO PASS. This procedure's objective is that the CART receives
+ * the final colour selection (TD-02-G), not that the gallery image
+ * updates. The gallery captures required by SPR-07 are evidence only and
+ * are deliberately NOT asserted here — DEF-F2-01 (the image never updates
+ * on a colour change) is discharged by TP-02-002, which owns that
+ * objective and fails on it. Asserting it here as well would fail this
+ * procedure for a defect outside its scope. The captures below stand as
+ * corroborating evidence for DEF-F2-01.
  *
  * Uses CartPage (a real navigation), not CartDrawer, for line counts —
  * CartDrawer's #drawer is a stale, server-rendered snapshot from page

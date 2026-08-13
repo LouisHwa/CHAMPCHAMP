@@ -12,14 +12,24 @@ import { recordUrl, withFailureEvidence } from '../../utils/evidence';
  * Covers TC-02-004 (#1 to #5) — #5 added by the refined TPS FN-02,
  * checking URL correspondence for a second product.
  *
- * EXPECTED TO FAIL, BY DESIGN, on step #5 only — marked via test.fail()
- * below. Confirmed defect DEF-F2-02: "Black heels" shows the
- * flower-print-jeans handle in its URL (PRODUCT_HANDLES.blackHeels is
- * already 'flower-print-jeans' in fixtures/test-data.ts, capturing this
- * exact mismatch). Steps #1-4 (Noir Jacket) have no known defect and
- * stay hard-asserted; test.fail() applies to the whole test, so step
- * #5's failure is what determines the overall result even though #1-4
- * genuinely pass.
+ * EXPECTED TO FAIL on step #5 only — DEF-F2-02: TD-02-C ("Black Heels")
+ * shows the flower-print-jeans handle in its URL (PRODUCT_HANDLES.
+ * blackHeels is already 'flower-print-jeans' in fixtures/test-data.ts,
+ * capturing this exact mismatch). Steps #1-4 (TD-02-B) have no known
+ * defect and genuinely pass.
+ *
+ * The failure IS the finding, so this reports FAILED rather than being
+ * marked test.fail(). Per the TDS methodology — "a coverage item that
+ * exposes a known defect is recorded as a failure, not silently passed" —
+ * test.fail() would make Playwright print "passed" for a procedure whose
+ * assertion failed, misstating the result in a verification report, and
+ * would also suppress the screenshot/trace/video that retain-on-failure
+ * keeps, since Playwright would not consider the test failed. The defect
+ * is identified by the annotation below so a reader can tell this apart
+ * from a regression.
+ *
+ * Step #5 uses expect.soft so #1-4's evidence is collected in full and
+ * the Wrap Up still empties the cart; the test reports FAILED regardless.
  *
  * Uses CartPage (a real navigation), not CartDrawer, for line counts —
  * CartDrawer's #drawer is a stale, server-rendered snapshot from page
@@ -28,7 +38,13 @@ import { recordUrl, withFailureEvidence } from '../../utils/evidence';
  */
 test.describe('FN-02 Product Detail', () => {
   test('TP-02-004 successful cart addition and URL correspondence', async ({ page }, testInfo) => {
-    test.fail(true, 'Confirmed defect DEF-F2-02: Black Heels shows the flower-print-jeans handle in its URL.');
+    testInfo.annotations.push({
+      type: 'known defect',
+      description:
+        'DEF-F2-02 — TD-02-C ("Black Heels") shows the flower-print-jeans handle in its URL. ' +
+        'Step #5 is expected to FAIL against the current store; the failure is the recorded ' +
+        'finding, not a broken test. Steps #1-4 genuinely pass.',
+    });
 
     const header = new HeaderBar(page);
     const catalog = new CatalogPage(page);
