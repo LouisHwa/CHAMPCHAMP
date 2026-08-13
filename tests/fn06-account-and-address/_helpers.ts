@@ -1,4 +1,4 @@
-import { Browser, Page, TestInfo } from '@playwright/test';
+import { Browser, BrowserContext, Page, TestInfo, test } from '@playwright/test';
 import { HeaderBar } from '../../pages/HeaderBar';
 import { SidebarNav } from '../../pages/SidebarNav';
 import { AddressBookPage } from '../../pages/AddressBookPage';
@@ -6,6 +6,51 @@ import { MyAccountPage } from '../../pages/MyAccountPage';
 
 const STORAGE_STATE_PATH = 'playwright/.auth/user.json';
 const BASE_URL = 'https://sauce-demo.myshopify.com';
+
+/**
+ * Video-recording options for a manually created context.
+ *
+ * A context made with browser.newContext() does NOT inherit `video` from
+ * playwright.config.ts's `use` block — only the built-in page/context
+ * fixture does, which is the same reason baseURL has to be passed
+ * explicitly below. Trace and screenshots still arrive, because the runner
+ * instruments contexts AFTER creation, but recordVideo has to be set AT
+ * creation. Confirmed 13 Aug: TP-06-001's output folder held trace.zip and
+ * test-failed-1.png but no video.webm at all.
+ *
+ * Videos are written into testInfo.outputDir so they land beside the trace
+ * for that test, and are attached to the report by closeContextWithVideo.
+ */
+export function videoOptions(testInfo?: TestInfo) {
+  return testInfo ? { recordVideo: { dir: testInfo.outputDir } } : {};
+}
+
+/**
+ * Closes a manually created context and attaches its video to the report.
+ *
+ * Playwright only finalises a recording when its context closes, and the
+ * file path is only resolvable afterwards — so the Video handle is taken
+ * before the close and awaited after it. Everything is best-effort: this
+ * runs from a `finally`, where a throw would replace the error being
+ * handled (see runWrapUp), and a missing video must never be the reason a
+ * procedure reports failure.
+ */
+export async function closeContextWithVideo(
+  context: BrowserContext,
+  page: Page,
+  testInfo: TestInfo,
+  label: string,
+) {
+  const video = page.video();
+  await context.close().catch(() => {});
+  if (!video) return;
+  try {
+    await testInfo.attach(`Video — ${label}`, { path: await video.path(), contentType: 'video/webm' });
+  } catch {
+    // Recording may not exist if the context died before any frame was
+    // captured — not worth failing a procedure over.
+  }
+}
 
 /**
  * Starts a browser context already signed in, standing in for a live
@@ -18,14 +63,55 @@ const BASE_URL = 'https://sauce-demo.myshopify.com';
  * explicitly since manually created contexts don't inherit it from
  * playwright.config.ts the way the default page/context fixture does.
  */
-export async function startSignedInContext(browser: Browser, storageStatePath: string = STORAGE_STATE_PATH) {
-  const context = await browser.newContext({ baseURL: BASE_URL, storageState: storageStatePath });
+export async function startSignedInContext(
+  browser: Browser,
+  storageStatePath: string = STORAGE_STATE_PATH,
+  testInfo?: TestInfo,
+) {
+  const context = await browser.newContext({
+    baseURL: BASE_URL,
+    storageState: storageStatePath,
+    ...videoOptions(testInfo),
+  });
   const page = await context.newPage();
   const header = new HeaderBar(page);
   const sidebar = new SidebarNav(page);
   const addressBook = new AddressBookPage(page);
   const myAccount = new MyAccountPage(page);
   return { context, page, header, sidebar, addressBook, myAccount };
+}
+
+/**
+ * Runs a procedure's Wrap Up so it can never be skipped, and can never
+ * mask the failure that brought us here.
+ *
+ * Every FN-06 Wrap Up empties the address book and signs out. That is not
+ * cosmetic: these procedures run one at a time against a single shared
+ * live account, so an address left behind or a session left signed in
+ * corrupts whichever procedure runs next. The Wrap Up used to sit inside
+ * withFailureEvidence, which rethrows — so any failed assertion skipped
+ * cleanup entirely. Confirmed live on TP-06-001's first run: three
+ * addresses left behind and the session never signed out.
+ *
+ * Call this from a `finally`. Two rules keep that safe:
+ *   - assertions inside `fn` must use expect.soft(), so a Wrap Up finding
+ *     still fails the procedure without throwing over the original error;
+ *   - anything that throws anyway is captured as evidence rather than
+ *     propagated, because an exception raised inside a `finally` REPLACES
+ *     the error being handled and would hide the real failure.
+ */
+export async function runWrapUp(testInfo: TestInfo, label: string, fn: () => Promise<void>) {
+  try {
+    await test.step(label, fn);
+  } catch (err) {
+    await testInfo.attach('Wrap Up could not complete', {
+      body:
+        'The Wrap Up did not finish, so this account may still hold leftover addresses ' +
+        'or a signed-in session. Reset it before running the next procedure.\n\n' +
+        String(err),
+      contentType: 'text/plain',
+    });
+  }
 }
 
 export type AddressInput = Partial<{

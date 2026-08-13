@@ -1,7 +1,7 @@
 import { test, expect } from '../../utils/pacedTest';
 import { withFailureEvidence, recordUrl } from '../../utils/evidence';
 import { FRESH_ACCOUNT_STATE_PATH } from '../../fixtures/credentials';
-import { startSignedInContext } from './_helpers';
+import { startSignedInContext, runWrapUp, closeContextWithVideo } from './_helpers';
 
 /**
  * TP-06-006 — Verify the My Account page renders empty states rather than
@@ -27,9 +27,31 @@ test.describe('FN-06 Account and Address Management', () => {
   test('TP-06-006 My Account empty state for a freshly registered account', async ({ browser }, testInfo) => {
     test.setTimeout(90_000);
 
-    const { context, page, header, myAccount } = await startSignedInContext(browser, FRESH_ACCOUNT_STATE_PATH);
+    const { context, page, header, myAccount } = await startSignedInContext(browser, FRESH_ACCOUNT_STATE_PATH, testInfo);
 
+    try {
     await withFailureEvidence(page, testInfo, 'TP-06-006 unexpected failure', async () => {
+      await test.step('Set Up — confirm ENV-14: the account holds no orders and no saved addresses', async () => {
+        // The TPS's Set Up step 1 says to "confirm that a freshly registered
+        // account holding no orders and no saved addresses is available" —
+        // CONFIRM, not establish. Unlike every other FN-06 procedure, this
+        // one must not empty the address book itself: an account emptied by
+        // the test is not the same as one that never held anything, and it
+        // is the empty state of a genuinely fresh account under test here.
+        // ENV-14 is the tester's to set up; this step verifies it and fails
+        // with a clear reason if it has not been, rather than letting the
+        // shortfall surface later as an apparent rendering defect.
+        await myAccount.goto();
+        const orders = await myAccount.orderRows.count();
+        const addresses = await myAccount.addressesLabel();
+        await testInfo.attach('ENV-14 precondition check', {
+          body: `order rows: ${orders}\naddresses label: ${addresses}`,
+          contentType: 'text/plain',
+        });
+        expect(orders, 'ENV-14 not satisfied: the account under test already holds orders — sign in as the freshly registered account').toBe(0);
+        expect(addresses, 'ENV-14 not satisfied: the account under test already holds saved addresses — clear them, or use a genuinely fresh account, before running this procedure').toContain('Addresses (0)');
+      });
+
       await test.step('TC-06-013 #1 — My Account page loads without an error', async () => {
         await myAccount.goto();
         const url = await recordUrl(page, testInfo, 'My Account — fresh account');
@@ -53,13 +75,14 @@ test.describe('FN-06 Account and Address Management', () => {
         expect(addressesLabel).toContain('Addresses (0)');
       });
 
-      await test.step('Wrap Up — sign out of the freshly registered account, return to store home page', async () => {
+    });
+    } finally {
+      await runWrapUp(testInfo, 'Wrap Up — sign out of the freshly registered account, return to store home page', async () => {
         await header.logOutLink.click();
         await page.waitForLoadState('domcontentloaded');
         await header.gotoHome();
       });
-    });
-
-    await context.close();
+      await closeContextWithVideo(context, page, testInfo, 'TP-06-006');
+    }
   });
 });

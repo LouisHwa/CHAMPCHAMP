@@ -2,13 +2,18 @@ import { test, expect } from '../../utils/pacedTest';
 import { withFailureEvidence, recordUrl, captureFailureEvidence } from '../../utils/evidence';
 import { ACCOUNT_TEST_DATA } from '../../fixtures/test-data';
 import { CatalogPage } from '../../pages/CatalogPage';
-import { startSignedInContext } from './_helpers';
+import { startSignedInContext, runWrapUp, closeContextWithVideo } from './_helpers';
 
 /**
  * TP-06-004 — Verify wishlist add, remove and view transitions across the
  * empty and populated states (TC-06-011).
  *
- * EXPECTED TO FAIL, BY DESIGN, at Set Up step 2 — DEF-F6-03 confirmed live
+ * THIS PROCEDURE IS EXPECTED TO REPORT "FAIL", AND THAT IS THE CORRECT
+ * RESULT — the feature under test does not exist on the store, so the
+ * procedure genuinely does not pass. The Fail is cross-referenced to
+ * DEF-F6-03 in the test log's Remark column.
+ *
+ * The failure lands at Set Up step 2 — DEF-F6-03 confirmed live
  * (9 Aug direct capture): the sidebar "Wish list" link is a dead in-page
  * anchor (href="#sauce-show-wish-list"); clicking it produces no page
  * change, no overlay, nothing — there is no wishlist page and no
@@ -22,12 +27,12 @@ import { startSignedInContext } from './_helpers';
  */
 test.describe('FN-06 Account and Address Management', () => {
   test('TP-06-004 wishlist state transitions', async ({ browser }, testInfo) => {
-    test.fail(true, 'Confirmed defect DEF-F6-03: no wishlist page and no add-to-wishlist control exist on the store.');
     test.setTimeout(90_000);
 
-    const { context, page, header, sidebar } = await startSignedInContext(browser);
+    const { context, page, header, sidebar } = await startSignedInContext(browser, undefined, testInfo);
     const catalog = new CatalogPage(page);
 
+    try {
     await withFailureEvidence(page, testInfo, 'TP-06-004 unexpected failure', async () => {
       await test.step('Set Up #1 — confirm TD-06-W1 and TD-06-W2 are present in the catalogue', async () => {
         await catalog.goto();
@@ -123,14 +128,15 @@ test.describe('FN-06 Account and Address Management', () => {
         });
       }
 
-      await test.step('Wrap Up — sign out and return to the store home page', async () => {
+    });
+    } finally {
+      await runWrapUp(testInfo, 'Wrap Up — sign out and return to the store home page', async () => {
         await header.gotoHome();
         await header.logOutLink.click();
         await page.waitForLoadState('domcontentloaded');
         await header.gotoHome();
       });
-    });
-
-    await context.close();
+      await closeContextWithVideo(context, page, testInfo, 'TP-06-004');
+    }
   });
 });

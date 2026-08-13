@@ -11,6 +11,9 @@ import {
   submitNewAddress,
   recordAddressValuesEntered,
   recordValidationMessages,
+  runWrapUp,
+  closeContextWithVideo,
+  videoOptions,
 } from './_helpers';
 
 const BASE_URL = 'https://sauce-demo.myshopify.com';
@@ -29,9 +32,16 @@ const BASE_URL = 'https://sauce-demo.myshopify.com';
  * produces no visible error message, and — beyond the log's original
  * wording — the page does a full reload back to a closed, empty form
  * rather than staying open with the entered values retained. TC-06-012
- * and TC-06-016 have no contradicting defect and are hard-asserted;
- * test.fail() applies to the whole test, so the TC-06-015 section is what
- * determines the overall result even though the rest genuinely pass.
+ * and TC-06-016 have no contradicting defect and are hard-asserted — a
+ * failure in one of those is something new and deserves investigation
+ * rather than being attributed to DEF-F6-04.
+ *
+ * THIS PROCEDURE IS EXPECTED TO REPORT "FAIL", AND THAT IS THE CORRECT
+ * RESULT — the TC-06-015 section asserts an outcome the store does not
+ * deliver, so the procedure genuinely does not pass. The Fail is
+ * cross-referenced to DEF-F6-04 in the test log's Remark column. That
+ * section is soft-asserted so the run still completes and the whole
+ * evidence set is captured.
  *
  * TC-06-015 #4 also hit a second, separate candidate new defect: with no
  * explicit name given (the account-holder-name fallback applies, per
@@ -43,26 +53,54 @@ const BASE_URL = 'https://sauce-demo.myshopify.com';
  * the same value with a name provided and passes cleanly. Soft-asserted,
  * case-insensitively, with evidence; not yet in the team's Defect Log.
  *
- * Re-signing-in (TC-06-012 #4, TC-06-016 #2) uses the same substitution
- * already proven on fn04-cart-management's tp-04-006-cart-resumption: a
- * fresh context loading the persistent playwright/.auth/user.json again,
- * not the just-closed (now server-side signed-out) snapshot from the
- * prior step. Browser B (TC-06-016) is a second, independent context —
- * ENV-10 requires storage independent of Browser A so the outcome
- * distinguishes account-held addresses from browser-held ones.
+ * TWO SUBSTITUTIONS APPLY HERE, AND BOTH MUST BE DECLARED IN THE TEST LOG.
+ *
+ * 1. SIGN-IN (TC-06-012 #4, TC-06-016 #2): performed by loading the
+ *    persistent playwright/.auth/user.json into a fresh context rather than
+ *    by completing the login form, which is hCaptcha-protected and rejects
+ *    any Playwright-driven browser regardless of pacing.
+ *
+ * 2. SIGN-OUT (TC-06-012 #3): performed by discarding the browser context
+ *    rather than by clicking Log Out. This one was forced by the first
+ *    substitution. Confirmed live 13 Aug: a real Log Out invalidates the
+ *    transplanted session SERVER-side, so the storage state reloaded at #4
+ *    is then a dead session and lands on /account/login — which is exactly
+ *    how this procedure failed on its first live run, with TC-06-012 #4 and
+ *    TC-06-016 unable to execute at all. Discarding the context clears every
+ *    cookie the browser holds, leaving no reachable signed-in session, which
+ *    is the state #4 requires. The step verifies that with a clean context
+ *    rather than asserting it on trust.
+ *
+ *    What this does NOT exercise is the server-side logout path. If a future
+ *    cycle can obtain two independent sessions for the same account (two
+ *    separate logins), the real sign-out becomes testable again and this
+ *    substitution should be withdrawn.
+ *
+ * Browser B (TC-06-016) is a second, independent context — ENV-10 requires
+ * storage independent of Browser A so the outcome distinguishes
+ * account-held addresses from browser-held ones.
  */
 test.describe('FN-06 Account and Address Management', () => {
   test('TP-06-005 account address journey', async ({ browser }, testInfo) => {
-    test.fail(true, 'Confirmed defect DEF-F6-04: leaving Country unselected produces no error message and discards entered values.');
     test.setTimeout(240_000);
 
-    let contextA = await startSignedInContext(browser);
+    let contextA = await startSignedInContext(browser, undefined, testInfo);
     // This test swaps contexts partway through (Browser A signs out and a
     // fresh context replaces it; Browser B opens alongside it), so a fixed
     // Page reference for failure evidence would go stale — withFailureEvidence
     // takes one fixed page and can't follow that. activePage is kept pointed
     // at whichever page is actually live, updated at each swap below.
     let activePage = contextA.page;
+    // Hoisted so the Wrap Up in `finally` can still reach them when a step
+    // fails before they are assigned — this procedure opens three contexts
+    // in total and every one of them has to be closed, and both accounts'
+    // address books emptied, however the run ends.
+    let contextAClosed = false;
+    let contextA2: Awaited<ReturnType<typeof startSignedInContext>> | null = null;
+    let contextB: Awaited<ReturnType<typeof browser.newContext>> | null = null;
+    let headerB: HeaderBar | null = null;
+    let addressBookB: AddressBookPage | null = null;
+    let pageBRef: Awaited<ReturnType<typeof contextA.context.newPage>> | null = null;
 
     try {
       await test.step('Set Up — Browser A signed in, address book emptied', async () => {
@@ -182,28 +220,61 @@ test.describe('FN-06 Account and Address Management', () => {
         expect((await contextA.addressBook.cardText(0).innerText()).toLowerCase()).toContain(ACCOUNT_TEST_DATA.malaysiaAddress.address1.toLowerCase());
       });
 
-      await test.step('TC-06-012 #3 — sign out (real, automatable action)', async () => {
-        await contextA.header.logOutLink.click();
-        await contextA.page.waitForLoadState('domcontentloaded');
-        await expect(contextA.header.logInLink).toBeVisible();
+      await test.step('TC-06-012 #3 — end the signed-in session (SIGN-OUT SUBSTITUTION — see header)', async () => {
+        // The session is ended by discarding the browser context rather than
+        // by clicking Log Out. Confirmed live 13 Aug: clicking Log Out
+        // invalidates the transplanted session SERVER-side, which leaves #4
+        // with no way to sign in again — sign-in is hCaptcha-protected and
+        // cannot be automated, and re-loading the storage state is the only
+        // substitute available, so a real sign-out here makes #4 and
+        // TC-06-016 impossible to execute at all (that is exactly how this
+        // procedure failed on its first live run).
+        //
+        // Closing the context discards every cookie it holds, so no
+        // signed-in session survives in this browser — which is the state #4
+        // needs to start from. Verified below rather than asserted on trust.
+        await recordUrl(contextA.page, testInfo, 'Signed in, before ending the session — TC-06-012 #3');
+        await contextA.context.close();
+        contextAClosed = true;
+
+        const cleanContext = await browser.newContext({ baseURL: BASE_URL });
+        const cleanPage = await cleanContext.newPage();
+        await cleanPage.goto('/account', { waitUntil: 'domcontentloaded' });
+        const url = await recordUrl(cleanPage, testInfo, 'After ending the session — TC-06-012 #3');
+        await testInfo.attach('TC-06-012 #3 — sign-out substitution', {
+          body:
+            'The signed-in browser context was discarded instead of clicking Log Out.\n' +
+            'A clean context with no stored session was then pointed at /account to confirm ' +
+            'no signed-in session remains reachable from this browser.\n' +
+            `destination: ${url}\n\n` +
+            'Declared substitution: a real sign-out invalidates the transplanted session ' +
+            'server-side, and sign-in cannot be automated (hCaptcha), so TC-06-012 #4 and ' +
+            'TC-06-016 could not otherwise be executed.',
+          contentType: 'text/plain',
+        });
+        await cleanContext.close();
+
+        expect(url).toContain('/account/login');
       });
 
-      await contextA.context.close();
-
-      let contextA2 = await startSignedInContext(browser);
-      activePage = contextA2.page;
+      // `a2` is a non-null const alias of the hoisted contextA2, so the
+      // steps below read normally; contextA2 itself stays visible to the
+      // Wrap Up in `finally`.
+      const a2 = await startSignedInContext(browser, undefined, testInfo);
+      contextA2 = a2;
+      activePage = a2.page;
 
       await test.step('TC-06-012 #4 — signing in again in a new session shows the address saved at #2 (account-bound, not browser-bound)', async () => {
-        await contextA2.myAccount.goto();
-        await contextA2.addressBook.goto();
-        expect(await contextA2.addressBook.addressCards.count()).toBe(1);
-        expect((await contextA2.addressBook.cardText(0).innerText()).toLowerCase()).toContain(ACCOUNT_TEST_DATA.malaysiaAddress.address1.toLowerCase());
+        await a2.myAccount.goto();
+        await a2.addressBook.goto();
+        expect(await a2.addressBook.addressCards.count()).toBe(1);
+        expect((await a2.addressBook.cardText(0).innerText()).toLowerCase()).toContain(ACCOUNT_TEST_DATA.malaysiaAddress.address1.toLowerCase());
       });
 
       let tc016Contents = '';
 
       await test.step('TC-06-016 #1 — Browser A: empty the address book, save one address from TD-06-MY', async () => {
-        await emptyAddressBook(contextA2.page, contextA2.addressBook);
+        await emptyAddressBook(a2.page, a2.addressBook);
         const values = {
           firstName: ACCOUNT_TEST_DATA.name.firstName,
           lastName: ACCOUNT_TEST_DATA.name.lastName,
@@ -216,27 +287,31 @@ test.describe('FN-06 Account and Address Management', () => {
           zip: ACCOUNT_TEST_DATA.malaysiaAddress.zip,
           phone: ACCOUNT_TEST_DATA.malaysiaAddress.phone,
         };
-        await fillNewAddressForm(contextA2.page, contextA2.addressBook, values);
+        await fillNewAddressForm(a2.page, a2.addressBook, values);
         await recordAddressValuesEntered(testInfo, 'TC-06-016 #1', values);
-        await submitNewAddress(contextA2.page, contextA2.addressBook);
+        await submitNewAddress(a2.page, a2.addressBook);
 
-        expect(await contextA2.addressBook.addressCards.count()).toBe(1);
-        tc016Contents = await contextA2.addressBook.cardText(0).innerText();
+        expect(await a2.addressBook.addressCards.count()).toBe(1);
+        tc016Contents = await a2.addressBook.cardText(0).innerText();
         await testInfo.attach('Address recorded on Browser A — TC-06-016 #1', { body: tc016Contents, contentType: 'text/plain' });
       });
 
-      const contextB = await browser.newContext({ baseURL: BASE_URL, storageState: 'playwright/.auth/user.json' });
-      const pageB = await contextB.newPage();
-      const headerB = new HeaderBar(pageB);
-      const addressBookB = new AddressBookPage(pageB);
+      const ctxB = await browser.newContext({ baseURL: BASE_URL, storageState: 'playwright/.auth/user.json', ...videoOptions(testInfo) });
+      contextB = ctxB;
+      const pageB = await ctxB.newPage();
+      pageBRef = pageB;
+      const hdrB = new HeaderBar(pageB);
+      const bookB = new AddressBookPage(pageB);
+      headerB = hdrB;
+      addressBookB = bookB;
       const myAccountB = new MyAccountPage(pageB);
       activePage = pageB;
 
       await test.step('TC-06-016 #2 — Browser B, signing in to the same account, shows the same saved address set', async () => {
         await myAccountB.goto();
-        await addressBookB.goto();
-        expect(await addressBookB.addressCards.count()).toBe(1);
-        const browserBContents = await addressBookB.cardText(0).innerText();
+        await bookB.goto();
+        expect(await bookB.addressCards.count()).toBe(1);
+        const browserBContents = await bookB.cardText(0).innerText();
         await testInfo.attach('Address set displayed on Browser B — TC-06-016 #2', {
           body: `Browser B: ${browserBContents}\ncompared against Browser A (TC-06-016 #1): ${tc016Contents}`,
           contentType: 'text/plain',
@@ -244,23 +319,36 @@ test.describe('FN-06 Account and Address Management', () => {
         expect(browserBContents).toBe(tc016Contents);
       });
 
-      await test.step('Wrap Up — empty the address book and sign out on both browsers, return home', async () => {
-        await emptyAddressBook(contextA2.page, contextA2.addressBook);
-        expect(await contextA2.addressBook.addressCards.count()).toBe(0);
-        await contextA2.header.logOutLink.click().catch(() => {});
-        await contextA2.header.gotoHome();
-
-        await emptyAddressBook(pageB, addressBookB);
-        expect(await addressBookB.addressCards.count()).toBe(0);
-        await headerB.logOutLink.click().catch(() => {});
-        await headerB.gotoHome();
-      });
-
-      await contextA2.context.close();
-      await contextB.close();
     } catch (err) {
       await captureFailureEvidence(activePage, testInfo, 'TP-06-005 unexpected failure').catch(() => {});
       throw err;
+    } finally {
+      await runWrapUp(testInfo, 'Wrap Up — empty the address book and sign out on both browsers, return home', async () => {
+        // Whichever Browser A context is still live does the account-side
+        // cleanup: on the failure path the run may not have reached the
+        // swap, so contextA2 can legitimately not exist yet.
+        const browserA = contextA2 ?? (contextAClosed ? null : contextA);
+        if (browserA) {
+          await emptyAddressBook(browserA.page, browserA.addressBook);
+          expect.soft(await browserA.addressBook.addressCards.count(), 'Wrap Up: Browser A address book should be empty').toBe(0);
+          await browserA.header.logOutLink.click().catch(() => {});
+          await browserA.header.gotoHome();
+        }
+
+        if (addressBookB && headerB) {
+          await emptyAddressBook(addressBookB.page, addressBookB);
+          expect.soft(await addressBookB.addressCards.count(), 'Wrap Up: Browser B address book should be empty').toBe(0);
+          await headerB.logOutLink.click().catch(() => {});
+          await headerB.gotoHome();
+        }
+      });
+
+      // All three contexts record video, so each is closed through the
+      // helper that attaches the recording rather than a bare close().
+      if (!contextAClosed) await closeContextWithVideo(contextA.context, contextA.page, testInfo, 'TP-06-005 Browser A');
+      if (contextA2) await closeContextWithVideo(contextA2.context, contextA2.page, testInfo, 'TP-06-005 Browser A (re-signed in)');
+      if (contextB && pageBRef) await closeContextWithVideo(contextB, pageBRef, testInfo, 'TP-06-005 Browser B');
+      else await contextB?.close().catch(() => {});
     }
   });
 });
