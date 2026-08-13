@@ -63,13 +63,14 @@ test.describe('FN-04 Cart Management', () => {
       }
 
       /**
-       * Finds a cart line by product name. Index-based targeting is wrong
-       * here: this cart lists lines NEWEST FIRST, so index 0 is whichever
-       * product was added LAST. TD-04-A is added before TD-04-B, so
-       * removeLine(0) removes TD-04-B — the opposite of what TPS Set Up
-       * step 3 asks for. Confirmed on 12 August against this same store
-       * during TP-04-003, where index-based targeting operated on the wrong
-       * lines and emptied the cart early.
+       * Finds a cart line by product name. This cart lists lines NEWEST
+       * FIRST, so index 0 is whichever product was added last - not TD-04-A.
+       * TC-04-008 #2 says to remove the TD-04-A line and confirm TD-04-B
+       * survives; removeLine(0) did the opposite, removing TD-04-B and
+       * leaving TD-04-A. The numeric assertions still passed because they
+       * compared against whichever line survived, so the procedure tested
+       * the inverse of the document without ever failing. Confirmed by the
+       * 11 August run: "remaining line: Striped top" (TD-04-A).
        */
       async function lineIndexFor(productName: string): Promise<number> {
         for (let attempt = 0; attempt < 2; attempt++) {
@@ -84,7 +85,7 @@ test.describe('FN-04 Cart Management', () => {
         }
         throw new Error(
           `No cart line found for "${productName}" even after reloading /cart. ` +
-            `Lines present: ${await cart.lineCount()}.`,
+            `Lines present: ${await cart.lineCount()}. Re-check the state the previous step left behind.`,
         );
       }
 
@@ -122,11 +123,11 @@ test.describe('FN-04 Cart Management', () => {
       });
 
       await test.step('TC-04-008 #2 — remove the TD-04-A line, TD-04-B survives, order total recalculates', async () => {
-        // TPS Set Up step 3 removes TD-04-A specifically and requires TD-04-B
-        // to survive UNCHANGED. This previously did removeLine(0), which on a
-        // newest-first cart is TD-04-B — so it removed the wrong product and
-        // still passed, because every assertion was written against positions
-        // rather than against the products named in the step.
+        // TPS: "Use the 'Remove' control on the TD-04-A line", expecting the
+        // TD-04-B line to survive unchanged. Target both by name, never by
+        // index — removeLine(0) on a newest-first cart removed TD-04-B, and
+        // every assertion was written against positions rather than the
+        // products the step names, so it passed while doing the inverse.
         const bTotalBefore = parseMoney(await cart.lineTotal(await lineIndexFor(CART_TEST_DATA.productB)).textContent());
         await clickAndSettle(cart.removeLine(await lineIndexFor(CART_TEST_DATA.productA)));
         await cart.goto();
@@ -146,24 +147,26 @@ test.describe('FN-04 Cart Management', () => {
         });
 
         expect.soft(closingLineCount, 'TC-04-008 #2 expects one line to remain.').toBe(1);
-        // The survivor's identity was recorded but never checked, which is
-        // what let the wrong-line removal pass unnoticed.
+        // "the TD-04-B line survives unchanged" - identity, not just amount.
+        // A survivor of the wrong product with an equal total would otherwise
+        // pass, which is what let the wrong-line removal go unnoticed.
         expect
           .soft(
             (remainingDescription ?? '').toLowerCase(),
             `TC-04-008 #2 expects the surviving line to be ${CART_TEST_DATA.productB} (TD-04-B).`,
           )
           .toContain(CART_TEST_DATA.productB.toLowerCase());
-        expect.soft(remainingTotal, 'TC-04-008 #2 expects TD-04-B to survive unchanged.').toBeCloseTo(bTotalBefore, 2);
+        expect.soft(remainingTotal, 'TC-04-008 #2 expects the surviving line total to be unchanged.').toBeCloseTo(bTotalBefore, 2);
         expect
-          .soft(orderTotal, 'TC-04-008 #2 expects the order total to equal the remaining line total.')
+          .soft(orderTotal, 'TC-04-008 #2 expects the order total to recalculate to the remaining line total.')
           .toBeCloseTo(bTotalBefore, 2);
       });
 
       await test.step('Reset — empty the cart before the next test case', async () => {
-        // Loop rather than assuming exactly one line survives: if an earlier
-        // step left more behind, a single removal would fail the hard
-        // assertion below and abort the two test cases that follow.
+        // Loop rather than assume a single line: if TC-04-008 #2 left the
+        // cart in an unexpected state, removeLine(0) alone would leave a
+        // line behind and the assertion below would fail here rather than
+        // corrupting TC-04-009's starting state.
         for (let i = (await cart.lineCount()) - 1; i >= 0; i--) {
           await clickAndSettle(cart.removeLine(i));
         }
@@ -185,6 +188,13 @@ test.describe('FN-04 Cart Management', () => {
           body: description.trim(),
           contentType: 'text/plain',
         });
+        // TCS #1: "The cart line displays THE PRODUCT with the size and
+        // colour selected" - the product identity is part of the expected
+        // result, and TC-04-009 exists to prove the link carries THAT line's
+        // variant, so the line has to be the right product to begin with.
+        expect
+          .soft(description.toLowerCase(), 'TC-04-009 #1 expects the cart line to show TD-04-V.')
+          .toContain(CART_TEST_DATA.productV.toLowerCase());
         expect.soft(description).toContain(CART_TEST_DATA.variant2.size);
         expect.soft(description).toContain(CART_TEST_DATA.variant2.colour);
       });
@@ -207,8 +217,18 @@ test.describe('FN-04 Cart Management', () => {
           contentType: 'text/plain',
         });
 
-        expect.soft(sizeValue).toBe(CART_TEST_DATA.variant2.size);
-        expect.soft(colourValue).toBe(CART_TEST_DATA.variant2.colour);
+        // TCS #2: "THE PRODUCT DETAIL PAGE opens with the size and colour of
+        // that cart line already selected." The store has a confirmed URL
+        // correspondence defect elsewhere (DEF-F2-02, Black heels resolving
+        // to flower-print-jeans), so landing on the wrong product with
+        // coincidentally matching dropdowns must not read as a pass.
+        expect
+          .soft(destination, "TC-04-009 #2 expects the link to open TD-04-V's own product detail page.")
+          .toContain(CART_TEST_DATA.productVHandle);
+        expect.soft(sizeValue, 'TC-04-009 #2 expects the size of the cart line to be pre-selected.').toBe(CART_TEST_DATA.variant2.size);
+        expect
+          .soft(colourValue, 'TC-04-009 #2 expects the colour of the cart line to be pre-selected. Confirms DEF-F4-08 when it is not.')
+          .toBe(CART_TEST_DATA.variant2.colour);
       });
 
       await test.step('Reset — empty the cart before the next test case', async () => {
@@ -222,6 +242,7 @@ test.describe('FN-04 Cart Management', () => {
       });
 
       let initialLineCount = 0;
+      let initialLineTotals: number[] = [];
       let initialOrderTotal = 0;
 
       await test.step('TC-04-010 #1 — add Product A, record cart lines and order total', async () => {
@@ -232,15 +253,20 @@ test.describe('FN-04 Cart Management', () => {
 
         await cart.goto();
         initialLineCount = await cart.lineCount();
-        initialOrderTotal = parseMoney(await cart.orderTotal.textContent());
-        const lineTotals: number[] = [];
+        // TPS: "record the cart LINES and the order total"; TCS: "the order
+        // total equals the SUM OF THE LINE TOTALS" (SPR-12). Only the count
+        // and the total were recorded, so neither the lines nor the sum
+        // relation were available to #3 for comparison.
+        initialLineTotals = [];
         for (let i = 0; i < initialLineCount; i++) {
-          lineTotals.push(parseMoney(await cart.lineTotal(i).textContent()));
+          initialLineTotals.push(parseMoney(await cart.lineTotal(i).textContent()));
         }
+        initialOrderTotal = parseMoney(await cart.orderTotal.textContent());
+
         await testInfo.attach('Initial cart lines / order total', {
           body:
             `line count: ${initialLineCount}\n` +
-            `line totals: ${lineTotals.join(', ')}\n` +
+            `line totals: ${initialLineTotals.join(', ')}\n` +
             `order total: ${initialOrderTotal}`,
           contentType: 'text/plain',
         });
@@ -250,7 +276,10 @@ test.describe('FN-04 Cart Management', () => {
         expect.soft(initialLineCount, 'TC-04-010 #1 expects the added line to be displayed.').toBeGreaterThan(0);
         expect
           .soft(initialOrderTotal, 'SPR-12: the order total should equal the sum of the line totals.')
-          .toBeCloseTo(lineTotals.reduce((a, b) => a + b, 0), 2);
+          .toBeCloseTo(
+            initialLineTotals.reduce((sum, value) => sum + value, 0),
+            2,
+          );
       });
 
       await test.step('TC-04-010 #2 — click Continue Shopping', async () => {
@@ -271,14 +300,25 @@ test.describe('FN-04 Cart Management', () => {
       await test.step('TC-04-010 #3 — reopen cart, compare with initial values', async () => {
         await cart.goto();
         const closingLineCount = await cart.lineCount();
+        const closingLineTotals: number[] = [];
+        for (let i = 0; i < closingLineCount; i++) {
+          closingLineTotals.push(parseMoney(await cart.lineTotal(i).textContent()));
+        }
         const closingOrderTotal = parseMoney(await cart.orderTotal.textContent());
+
         await testInfo.attach('Reopened cart lines / order total', {
-          body: `line count: ${closingLineCount} (was ${initialLineCount})\norder total: ${closingOrderTotal} (was ${initialOrderTotal})`,
+          body:
+            `line count: ${closingLineCount} (was ${initialLineCount})\n` +
+            `line totals: ${closingLineTotals.join(', ')} (were ${initialLineTotals.join(', ')})\n` +
+            `order total: ${closingOrderTotal} (was ${initialOrderTotal})`,
           contentType: 'text/plain',
         });
 
-        expect.soft(closingLineCount).toBe(initialLineCount);
-        expect.soft(closingOrderTotal).toBeCloseTo(initialOrderTotal, 2);
+        expect.soft(closingLineCount, 'TC-04-010 #3 expects the cart lines to be unchanged.').toBe(initialLineCount);
+        expect.soft(closingLineTotals, 'TC-04-010 #3 expects each line total to be unchanged.').toEqual(initialLineTotals);
+        expect
+          .soft(closingOrderTotal, 'TC-04-010 #3 expects the order total to be unchanged.')
+          .toBeCloseTo(initialOrderTotal, 2);
       });
 
       await test.step('Wrap Up — empty the cart, return to the store home page', async () => {
@@ -287,10 +327,11 @@ test.describe('FN-04 Cart Management', () => {
           await clickAndSettle(cart.removeLine(i));
         }
         await cart.goto();
-        // TPS Wrap Up step 1: "Empty the cart and CONFIRM THAT IT HAS
-        // RETURNED to the empty-cart baseline." Removal was performed but
-        // never confirmed, so a silent failure would hand the next procedure
-        // a dirty cart — and every FN-04 Set Up hard-asserts an empty one.
+        // TPS Wrap Up: "Empty the cart and CONFIRM THAT IT HAS RETURNED to
+        // the empty-cart baseline." Both mid-procedure Resets confirm it;
+        // the Wrap Up did not, so a silent failure would hand the next
+        // procedure a dirty cart — and every FN-04 Set Up hard-asserts an
+        // empty one.
         expect(await cart.lineCount(), 'Wrap Up expects the cart to return to the empty-cart baseline.').toBe(0);
         await header.gotoHome();
         await settleForEvidence(page);

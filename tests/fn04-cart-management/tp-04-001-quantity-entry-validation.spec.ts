@@ -2,6 +2,7 @@ import { test, expect } from '../../utils/pacedTest';
 import { HeaderBar } from '../../pages/HeaderBar';
 import { ProductPage } from '../../pages/ProductPage';
 import { CartPage } from '../../pages/CartPage';
+import { CatalogPage } from '../../pages/CatalogPage';
 import { CART_TEST_DATA } from '../../fixtures/test-data';
 import { parseMoney, withFailureEvidence } from '../../utils/evidence';
 
@@ -41,6 +42,7 @@ test.describe('FN-04 Cart Management', () => {
     test.setTimeout(90_000);
 
     const header = new HeaderBar(page);
+    const catalog = new CatalogPage(page);
     const product = new ProductPage(page);
     const cart = new CartPage(page);
 
@@ -57,7 +59,12 @@ test.describe('FN-04 Cart Management', () => {
         // matches TP-04-002's dedicated stock check verbatim) — recorded
         // here for completeness with the document as written, but this
         // procedure's actual TCs (001-003) don't otherwise depend on it.
-        await product.goto(CART_TEST_DATA.productAHandle);
+        // TPS: "Select TD-04-A FROM THE CATALOGUE" - reach the PDP the way
+        // the step describes rather than jumping straight to the handle.
+        await catalog.goto();
+        await catalog.productLink(CART_TEST_DATA.productA).click();
+        await page.waitForLoadState('domcontentloaded');
+
         const stockIndicator = page.locator('#buy').getByText(/\d+\s*(in stock|available|left)/i);
         const stockShown = await stockIndicator.isVisible().catch(() => false);
         await testInfo.attach('Stock quantity displayed on PDP', {
@@ -95,10 +102,27 @@ test.describe('FN-04 Cart Management', () => {
           contentType: 'text/plain',
         });
 
-        expect.soft(lineCount).toBe(1);
+        expect.soft(lineCount, 'TC-04-001 #1 expects one line for the product added.').toBe(1);
+        // "one line FOR THE PRODUCT ADDED" - identity is part of the expected
+        // result, so a line for a different product must not satisfy it.
+        expect
+          .soft((lineDescription ?? '').toLowerCase(), 'TC-04-001 #1 expects the line to be TD-04-A.')
+          .toContain(CART_TEST_DATA.productA.toLowerCase());
       });
 
       await test.step('TC-04-001 #2 — commit quantity 1', async () => {
+        // SPR-13: "commit the value using a control the page provides AND
+        // RECORD THE METHOD USED". The method was never recorded, even though
+        // the same SPR draws the typed-vs-committed distinction this whole
+        // procedure rests on.
+        await testInfo.attach('SPR-13 - quantity commit method', {
+          body:
+            'Every quantity in this procedure is committed by clicking the ' +
+            "cart page's own Update control (#update), never by typing alone. " +
+            'A value typed into the field but not committed is not a submitted quantity.',
+          contentType: 'text/plain',
+        });
+
         await cart.goto();
         await cart.lineQuantityInput(0).fill('1');
         await cart.updateButton.click();
@@ -154,7 +178,10 @@ test.describe('FN-04 Cart Management', () => {
           body: `line count: ${lineDisplayed}\nline description: ${lineDescription?.trim() ?? '(none)'}`,
           contentType: 'text/plain',
         });
-        expect.soft(lineDisplayed).toBe(1);
+        expect.soft(lineDisplayed, 'TC-04-002 #1 expects one line for the product added.').toBe(1);
+        expect
+          .soft((lineDescription ?? '').toLowerCase(), 'TC-04-002 #1 expects the line to be TD-04-A.')
+          .toContain(CART_TEST_DATA.productA.toLowerCase());
       });
 
       await test.step('TC-04-002 #2 — set quantity to 0, line removed, order total returns to nothing', async () => {
@@ -189,14 +216,33 @@ test.describe('FN-04 Cart Management', () => {
         await cart.lineQuantityInput(0).fill('2');
         await cart.updateButton.click();
         await cart.goto();
-        expect.soft(await cart.lineQuantityInput(0).inputValue()).toBe('2');
+
+        const baselineQty = await cart.lineQuantityInput(0).inputValue();
+        const baselineLineTotal = parseMoney(await cart.lineTotal(0).textContent());
+        await testInfo.attach('TC-04-003 #1 - baseline quantity 2', {
+          body: `committed quantity: ${baselineQty}\nunit price: ${unitPrice}\nline total: ${baselineLineTotal}`,
+          contentType: 'text/plain',
+        });
+
+        expect.soft(baselineQty, 'TC-04-003 #1 expects the quantity of 2 to be accepted.').toBe('2');
+        // TCS #1: "...AND THE LINE TOTAL EQUALS TWO UNIT PRICES." Only the
+        // field value was checked, so a quantity that read 2 while the total
+        // said otherwise would have passed.
+        expect
+          .soft(baselineLineTotal, 'TC-04-003 #1 expects the line total to equal two unit prices.')
+          .toBeCloseTo(2 * unitPrice, 2);
       });
 
-      const invalidValues: { label: string; value: string; step: string }[] = [
-        { label: 'negative (-5)', value: '-5', step: 'TC-04-003 #2' },
-        { label: 'non-numeric (abc)', value: 'abc', step: 'TC-04-003 #3' },
-        { label: 'fractional (2.5)', value: '2.5', step: 'TC-04-003 #4' },
-        { label: 'empty', value: '', step: 'TC-04-003 #5' },
+      // Each TCS step here carries two or three expected results, not one.
+      // Only the validation message was ever asserted, so the half the store
+      // gets right - retaining the previous quantity - went unverified, and
+      // the report could not distinguish "reverted silently" (the DEF-F4-03
+      // wording) from "did something else entirely".
+      const invalidValues: { label: string; value: string; step: string; alsoExpects: string }[] = [
+        { label: 'negative (-5)', value: '-5', step: 'TC-04-003 #2', alsoExpects: 'no negative line total is produced' },
+        { label: 'non-numeric (abc)', value: 'abc', step: 'TC-04-003 #3', alsoExpects: 'the value does not revert silently' },
+        { label: 'fractional (2.5)', value: '2.5', step: 'TC-04-003 #4', alsoExpects: 'the integer-only rule is enforced' },
+        { label: 'empty', value: '', step: 'TC-04-003 #5', alsoExpects: 'the empty value is rejected' },
       ];
 
       for (const invalid of invalidValues) {
@@ -207,14 +253,37 @@ test.describe('FN-04 Cart Management', () => {
 
           const messageLocator = page.locator('#cart .error, #cart .message, #cart [class*="error"]');
           const messageShown = (await messageLocator.count()) > 0;
+          const messageText = messageShown ? ((await messageLocator.first().innerText()) ?? '').trim() : null;
           const quantityAfter = await cart.lineQuantityInput(0).inputValue();
+          const lineTotalAfter = parseMoney(await cart.lineTotal(0).textContent());
 
           await testInfo.attach(`Quantity "${invalid.value || '(empty)'}" — system response`, {
-            body: `explicit validation message shown: ${messageShown}\nquantity field value after commit: ${quantityAfter} (baseline was 2)`,
+            body:
+              `explicit validation message shown: ${messageShown}\n` +
+              `message text: ${messageText ?? '(none)'}\n` +
+              `quantity field value after commit: ${quantityAfter} (baseline was 2)\n` +
+              `line total after commit: ${lineTotalAfter} (2 x ${unitPrice} = ${2 * unitPrice})\n` +
+              `also expected by the TCS: ${invalid.alsoExpects}`,
             contentType: 'text/plain',
           });
 
-          expect.soft(messageShown, `TC-04-003 expects an explicit validation message for ${invalid.label} input.`).toBe(true);
+          // Expected result 1 - the explicit validation message (DEF-F4-03).
+          expect
+            .soft(messageShown, `TC-04-003 expects an explicit validation message for ${invalid.label} input.`)
+            .toBe(true);
+          // Expected result 2 - "the previous quantity is retained", stated in
+          // all four steps. This is the half the store does satisfy, so
+          // asserting it turns each step into a precise finding rather than a
+          // bare failure.
+          expect
+            .soft(quantityAfter, `TC-04-003 expects the previous quantity (2) to be retained after ${invalid.label} input.`)
+            .toBe('2');
+          // Expected result 3 - "no negative line total is produced" (#2 only).
+          if (invalid.value === '-5' && !Number.isNaN(lineTotalAfter)) {
+            expect
+              .soft(lineTotalAfter, 'TC-04-003 #2 expects no negative line total to be produced.')
+              .toBeGreaterThanOrEqual(0);
+          }
         });
       }
 
@@ -224,6 +293,10 @@ test.describe('FN-04 Cart Management', () => {
         for (let i = remaining - 1; i >= 0; i--) {
           await cart.removeLine(i).click();
         }
+        await cart.goto();
+        // TPS Wrap Up: "Remove the test product from the cart and CONFIRM
+        // THAT THE CART RETURNS to the empty-cart baseline."
+        expect(await cart.lineCount(), 'Wrap Up expects the cart to return to the empty-cart baseline.').toBe(0);
         await header.gotoHome();
       });
     });
