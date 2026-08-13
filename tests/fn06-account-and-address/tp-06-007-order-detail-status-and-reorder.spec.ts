@@ -4,6 +4,7 @@ import { OrderStatusPage } from '../../pages/OrderStatusPage';
 import { CartPage } from '../../pages/CartPage';
 import { HeaderBar } from '../../pages/HeaderBar';
 import { readMostRecentOrderForTestAccount } from './_existing-order';
+import { runWrapUp, closeContextWithVideo, videoOptions } from './_helpers';
 
 const BASE_URL = 'https://sauce-demo.myshopify.com';
 
@@ -47,6 +48,14 @@ test.describe('FN-06 Account and Address Management', () => {
     const { page, header, order } = signedIn;
 
     let activePage = page;
+    // Hoisted so the Wrap Up in `finally` can reach them however the run
+    // ends — this procedure closes the signed-in context partway through
+    // and opens a guest one, and both must be cleaned up either way.
+    let signedInContextClosed = false;
+    let guestContext: Awaited<ReturnType<typeof browser.newContext>> | null = null;
+    let guestCart: CartPage | null = null;
+    let guestHeader: HeaderBar | null = null;
+    let guestPageRef: typeof page | null = null;
 
     try {
       await test.step('TC-06-014 #1 — "Your Orders" table lists the completed order', async () => {
@@ -84,13 +93,18 @@ test.describe('FN-06 Account and Address Management', () => {
       });
 
       await signedIn.context.close();
+      signedInContextClosed = true;
 
-      const guestContext = await browser.newContext({ baseURL: BASE_URL });
-      const guestPage = await guestContext.newPage();
+      const ctxGuest = await browser.newContext({ baseURL: BASE_URL, ...videoOptions(testInfo) });
+      guestContext = ctxGuest;
+      const guestPage = await ctxGuest.newPage();
+      guestPageRef = guestPage;
       activePage = guestPage;
       const orderStatus = new OrderStatusPage(guestPage);
-      const guestCart = new CartPage(guestPage);
-      const guestHeader = new HeaderBar(guestPage);
+      const cartGuest = new CartPage(guestPage);
+      const hdrGuest = new HeaderBar(guestPage);
+      guestCart = cartGuest;
+      guestHeader = hdrGuest;
 
       let orderStatusText = '';
 
@@ -110,8 +124,8 @@ test.describe('FN-06 Account and Address Management', () => {
       });
 
       await test.step('TC-06-018 #1 — cart is empty before Buy again', async () => {
-        await guestCart.goto();
-        expect(await guestCart.lineCount()).toBe(0);
+        await cartGuest.goto();
+        expect(await cartGuest.lineCount()).toBe(0);
         await guestPage.goto(order.viewOrderLink!, { waitUntil: 'domcontentloaded' });
         await orderStatus.waitForLoaded();
       });
@@ -124,10 +138,10 @@ test.describe('FN-06 Account and Address Management', () => {
       });
 
       await test.step('TC-06-018 #3 — cart contents match the items listed on the order status page', async () => {
-        await guestCart.goto();
-        const lineCount = await guestCart.lineCount();
+        await cartGuest.goto();
+        const lineCount = await cartGuest.lineCount();
         const lineDescriptions = await Promise.all(
-          Array.from({ length: lineCount }, (_, i) => guestCart.lineDescription(i).innerText()),
+          Array.from({ length: lineCount }, (_, i) => cartGuest.lineDescription(i).innerText()),
         );
         await testInfo.attach('Cart contents after Buy again — TC-06-018 #3', {
           body: `lines: ${lineCount}\ndescriptions: ${lineDescriptions.join(', ')}`,
@@ -147,20 +161,27 @@ test.describe('FN-06 Account and Address Management', () => {
         }
       });
 
-      await test.step('Wrap Up — empty the cart, close the unauthenticated session, return to store home page', async () => {
-        await guestCart.goto();
-        const remaining = await guestCart.lineCount();
-        for (let i = remaining - 1; i >= 0; i--) {
-          await guestCart.removeLine(i).click();
-        }
-        await guestCart.goto();
-        expect(await guestCart.lineCount()).toBe(0);
-        await guestHeader.gotoHome();
-        await guestContext.close();
-      });
     } catch (err) {
       await captureFailureEvidence(activePage, testInfo, 'TP-06-007 unexpected failure').catch(() => {});
       throw err;
+    } finally {
+      await runWrapUp(testInfo, 'Wrap Up — empty the cart, close the unauthenticated session, return to store home page', async () => {
+        // The guest context only exists once TC-06-017 #2 has opened it —
+        // a failure before that point legitimately leaves nothing to clean.
+        if (guestCart && guestHeader) {
+          await guestCart.goto();
+          const remaining = await guestCart.lineCount();
+          for (let i = remaining - 1; i >= 0; i--) {
+            await guestCart.removeLine(i).click();
+          }
+          await guestCart.goto();
+          expect.soft(await guestCart.lineCount(), 'Wrap Up: guest cart should be empty').toBe(0);
+          await guestHeader.gotoHome();
+        }
+      });
+      if (guestContext && guestPageRef) await closeContextWithVideo(guestContext, guestPageRef, testInfo, 'TP-06-007 guest browser');
+      else await guestContext?.close().catch(() => {});
+      if (!signedInContextClosed) await closeContextWithVideo(signedIn.context, page, testInfo, 'TP-06-007 signed-in browser');
     }
   });
 });

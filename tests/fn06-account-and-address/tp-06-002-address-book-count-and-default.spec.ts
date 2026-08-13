@@ -8,6 +8,8 @@ import {
   submitNewAddress,
   recordAddressValuesEntered,
   recordValidationMessages,
+  runWrapUp,
+  closeContextWithVideo,
 } from './_helpers';
 
 /**
@@ -20,14 +22,20 @@ import {
  * Executed in document order 007, 008, 006, 009 (not numerically), per
  * the TPS's own note: the procedure follows the life of the address book.
  *
- * EXPECTED TO FAIL, BY DESIGN, on the TC-06-007 section only — DEF-F6-05
- * confirmed live (this session's address-book repair: Country only, every
- * other required-looking field blank, still saved without error). TC-06-
- * 007 expects a blocked save with no address created; the real outcome is
- * that the address IS created. TC-06-008, TC-06-006 and TC-06-009 have no
- * contradicting defect and are hard-asserted; test.fail() applies to the
- * whole test, so the TC-06-007 section is what determines the overall
- * result even though the rest genuinely pass.
+ * THIS PROCEDURE IS EXPECTED TO REPORT "FAIL", AND THAT IS THE CORRECT
+ * RESULT — the TC-06-007 section asserts an outcome the store does not
+ * deliver, so the procedure genuinely does not pass. The Fail is
+ * cross-referenced to DEF-F6-05 in the test log's Remark column.
+ *
+ * DEF-F6-05 confirmed live (this session's address-book repair: Country
+ * only, every other required-looking field blank, still saved without
+ * error). TC-06-007 expects a blocked save with no address created; the
+ * real outcome is that the address IS created. That section is
+ * soft-asserted so the run still completes and the whole evidence set is
+ * captured. TC-06-008, TC-06-006 and TC-06-009 have no contradicting
+ * defect and are hard-asserted — a failure in one of those is something
+ * new and deserves investigation rather than being attributed to
+ * DEF-F6-05.
  *
  * Confirmed live: the empty address book renders no distinct empty-state
  * element or message at all (just nothing where the cards would be), so
@@ -36,11 +44,16 @@ import {
  */
 test.describe('FN-06 Account and Address Management', () => {
   test('TP-06-002 address book count and default', async ({ browser }, testInfo) => {
-    test.fail(true, 'Confirmed defect DEF-F6-05: an address with Address Line 1 blank still saves, contradicting TC-06-007.');
-    test.setTimeout(180_000);
+    // 13 steps and 8 address saves, plus repeated My Account trips for the
+    // counter readings. TP-06-001 (roughly 20 saves) took 5.3 min live on
+    // 13 Aug, so 180s left very little headroom here — and a run killed at
+    // its cap loses the Wrap Up with it, leaving the shared account dirty
+    // for the next procedure. Raised rather than risk that.
+    test.setTimeout(300_000);
 
-    const { context, page, header, addressBook, myAccount } = await startSignedInContext(browser);
+    const { context, page, header, addressBook, myAccount } = await startSignedInContext(browser, undefined, testInfo);
 
+    try {
     await withFailureEvidence(page, testInfo, 'TP-06-002 unexpected failure', async () => {
       await test.step('Set Up — empty the address book (TP-06-001 already executed)', async () => {
         await emptyAddressBook(page, addressBook);
@@ -265,15 +278,19 @@ test.describe('FN-06 Account and Address Management', () => {
         expect(label).toContain('Addresses (0)');
       });
 
-      await test.step('Wrap Up — confirm the address book is empty and sign out', async () => {
-        await addressBook.goto();
-        expect(await addressBook.addressCards.count()).toBe(0);
+    });
+    } finally {
+      await runWrapUp(testInfo, 'Wrap Up — confirm the address book is empty and sign out', async () => {
+        // emptyAddressBook rather than a bare check: on the failure path
+        // the procedure may not have reached its own deletions, and the
+        // next procedure needs this account clean either way.
+        await emptyAddressBook(page, addressBook);
+        expect.soft(await addressBook.addressCards.count(), 'Wrap Up: address book should be empty').toBe(0);
         await header.logOutLink.click();
         await page.waitForLoadState('domcontentloaded');
         await header.gotoHome();
       });
-    });
-
-    await context.close();
+      await closeContextWithVideo(context, page, testInfo, 'TP-06-002');
+    }
   });
 });

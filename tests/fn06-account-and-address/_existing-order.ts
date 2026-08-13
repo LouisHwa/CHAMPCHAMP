@@ -4,6 +4,7 @@ import { MyAccountPage } from '../../pages/MyAccountPage';
 import { OrderDetailPage } from '../../pages/OrderDetailPage';
 import { recordUrl } from '../../utils/evidence';
 import { waitForEmail, extractLink } from '../../utils/email';
+import { videoOptions } from './_helpers';
 
 const STORAGE_STATE_PATH = 'playwright/.auth/user.json';
 const BASE_URL = 'https://sauce-demo.myshopify.com';
@@ -34,7 +35,7 @@ export type ExistingOrder = {
  * test-data wording gap, not a defect.
  */
 export async function readMostRecentOrderForTestAccount(browser: Browser, testInfo: TestInfo) {
-  const context = await browser.newContext({ baseURL: BASE_URL, storageState: STORAGE_STATE_PATH });
+  const context = await browser.newContext({ baseURL: BASE_URL, storageState: STORAGE_STATE_PATH, ...videoOptions(testInfo) });
   const page = await context.newPage();
   const header = new HeaderBar(page);
   const myAccount = new MyAccountPage(page);

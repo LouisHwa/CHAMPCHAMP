@@ -1,7 +1,7 @@
 import { test, expect } from '../../utils/pacedTest';
 import { withFailureEvidence } from '../../utils/evidence';
 import { ACCOUNT_TEST_DATA } from '../../fixtures/test-data';
-import { startSignedInContext, emptyAddressBook, fillNewAddressForm, submitNewAddress } from './_helpers';
+import { startSignedInContext, emptyAddressBook, fillNewAddressForm, submitNewAddress, runWrapUp, closeContextWithVideo } from './_helpers';
 
 const A = 0;
 const B = 1;
@@ -10,7 +10,12 @@ const B = 1;
  * TP-06-003 — Verify only one address is in edit mode at a time across all
  * transitions of the address row state machine (TC-06-010, 8 steps).
  *
- * EXPECTED TO FAIL, BY DESIGN — DEF-F6-02 confirmed live (9 Aug direct
+ * THIS PROCEDURE IS EXPECTED TO REPORT "FAIL", AND THAT IS THE CORRECT
+ * RESULT — the store does not enforce the single-edit-mode rule the TPS
+ * expects, so the procedure genuinely does not pass. The Fail is
+ * cross-referenced to DEF-F6-02 in the test log's Remark column.
+ *
+ * DEF-F6-02 confirmed live (9 Aug direct
  * capture): opening Edit on a second address while a first is already open
  * leaves BOTH edit forms visible simultaneously. The site's toggleForm(id)
  * call is a pure per-card toggle — it has no awareness of, and no closing
@@ -31,11 +36,24 @@ const B = 1;
  */
 test.describe('FN-06 Account and Address Management', () => {
   test('TP-06-003 address row edit state transitions', async ({ browser }, testInfo) => {
-    test.fail(true, 'Confirmed defect DEF-F6-02: opening a second address for edit does not close the first.');
     test.setTimeout(150_000);
 
-    const { context, page, header, addressBook } = await startSignedInContext(browser);
+    const { context, page, header, addressBook } = await startSignedInContext(browser, undefined, testInfo);
 
+    // Declared outside the try so the Wrap Up in `finally` can record the
+    // final pair state too — the TPS asks for both rows' state at every
+    // step, and the state left behind by a failed run is worth capturing.
+    const recordPairState = async (label: string) => {
+      const openA = await addressBook.isEditFormOpen(A);
+      const openB = await addressBook.isEditFormOpen(B);
+      await testInfo.attach(`Edit-mode state — ${label}`, {
+        body: `address A open: ${openA}\naddress B open: ${openB}`,
+        contentType: 'text/plain',
+      });
+      return { openA, openB };
+    };
+
+    try {
     await withFailureEvidence(page, testInfo, 'TP-06-003 unexpected failure', async () => {
       await test.step('Set Up — empty the address book, save two addresses (A and B) from TD-06-MY', async () => {
         await emptyAddressBook(page, addressBook);
@@ -52,16 +70,6 @@ test.describe('FN-06 Account and Address Management', () => {
         await submitNewAddress(page, addressBook);
         expect(await addressBook.addressCards.count()).toBe(2);
       });
-
-      const recordPairState = async (label: string) => {
-        const openA = await addressBook.isEditFormOpen(A);
-        const openB = await addressBook.isEditFormOpen(B);
-        await testInfo.attach(`Edit-mode state — ${label}`, {
-          body: `address A open: ${openA}\naddress B open: ${openB}`,
-          contentType: 'text/plain',
-        });
-        return { openA, openB };
-      };
 
       await test.step('TC-06-010 #1 — Edit(A): A opens, B stays in view mode', async () => {
         await addressBook.editLink(A).click();
@@ -143,16 +151,17 @@ test.describe('FN-06 Account and Address Management', () => {
         expect.soft(state.openB, 'TC-06-010 #8: TPS expects no address left in edit mode').toBe(false);
       });
 
-      await test.step('Wrap Up — confirm no address in edit mode, empty the address book, sign out', async () => {
-        await recordPairState('Wrap Up');
+    });
+    } finally {
+      await runWrapUp(testInfo, 'Wrap Up — confirm no address in edit mode, empty the address book, sign out', async () => {
+        await recordPairState('Wrap Up').catch(() => {});
         await emptyAddressBook(page, addressBook);
-        expect(await addressBook.addressCards.count()).toBe(0);
+        expect.soft(await addressBook.addressCards.count(), 'Wrap Up: address book should be empty').toBe(0);
         await header.logOutLink.click();
         await page.waitForLoadState('domcontentloaded');
         await header.gotoHome();
       });
-    });
-
-    await context.close();
+      await closeContextWithVideo(context, page, testInfo, 'TP-06-003');
+    }
   });
 });
