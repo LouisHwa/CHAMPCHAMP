@@ -27,7 +27,12 @@ export default defineConfig({
     // that may itself have been Cloudflare — no benefit, just more
     // traffic. Re-run manually (paced) instead.
     retries: 0,
-    timeout: 30_000,
+    // 30s was the default before pacing was introduced, and it collides
+    // with slowMo: 600 — every action carries an extra 0.6s, so a
+    // procedure with ~50 actions spends 30s on pacing alone. Confirmed
+    // live on other branches: runs were being killed mid-procedure at
+    // exactly 30s, which also loses the Wrap Up.
+    timeout: 90_000,
     expect: { timeout: 7_000 },
 
     reporter: [
@@ -45,9 +50,21 @@ export default defineConfig({
         // so cache/cookies start empty for every test.
         storageState: undefined,
 
-        trace: "retain-on-failure",
-        screenshot: "only-on-failure",
-        video: "retain-on-failure",
+        // "on" rather than retain/only-on-failure: these runs ARE the
+        // recorded evidence for the test log, so a procedure that passes
+        // needs its trace and screenshots just as much as one that fails —
+        // a pass with no evidence cannot be shown to have been executed.
+        // The trace also carries the per-step DOM snapshots and the
+        // destination URL at every navigation, which is what SPR-01 asks
+        // for and what SPR-04 needs when a step does fail.
+        trace: "on",
+        screenshot: "on",
+        // "on", not "retain-on-failure": these runs are the recorded
+        // evidence for the test log, so a passing procedure needs its
+        // video just as much as a failing one. Matches what FN-06's
+        // manually created contexts produce, where recording is always on
+        // and the file is attached when the context closes.
+        video: "on",
 
         // Cloudflare served an interstitial during a signed-out FN-04 batch
         // on 7 August — automating a live, Cloudflare-protected site at
