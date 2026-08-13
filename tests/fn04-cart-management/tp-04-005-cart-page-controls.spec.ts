@@ -15,25 +15,32 @@ import { parseMoney, recordUrl, settleForEvidence, withFailureEvidence } from '.
  * The two-line scenario now uses TD-04-A/TD-04-B (Striped top / Grey
  * jacket) rather than Grey jacket/Bronze sandals.
  *
- * EXPECTED TO FAIL, BY DESIGN, on the TC-04-009 (product link) section
- * only — marked via test.fail() below. Confirmed in the Defect Log
- * (DEF-F4-08): the cart line's product link opens the product without
+ * REPORTS AS A REAL FAILURE. test.fail() was removed by team decision on
+ * 13 August: it made Playwright report an unmet expected result as
+ * "passed", so the console count contradicted the Defect Log and any
+ * unrelated breakage (a Cloudflare interstitial, a timeout) was hidden
+ * behind the same green tick. The run now states the true number of
+ * failures.
+ *
+ * Every expected-result check is expect.soft(), so a failure is recorded
+ * and execution CONTINUES to the end of the procedure — one run surfaces
+ * every unmet result rather than stopping at the first. Set Up and Reset
+ * preconditions stay hard: if the cart is not empty when the procedure
+ * starts, the run is invalid and continuing would only cascade noise.
+ *
+ * Expected failure here is the TC-04-009 (product link) section,
+ * confirming DEF-F4-08: the cart line's product link opens the product without
  * the correct variant selected, landing on the PDP's usual auto-selected
  * defaults instead. TC-04-008 (line removal) and TC-04-010 (Continue
- * Shopping) have no known defect and are hard-asserted; test.fail()
- * applies to the whole test, so the product-link failure is what
- * determines the overall result even though the other two sections
- * genuinely pass.
+ * Shopping) have no known defect and are expected to pass, so a correct
+ * run reports failures only from the TC-04-009 section.
  *
- * Wrapped in withFailureEvidence — test.fail() suppresses Playwright's
- * automatic failure capture, so this is what leaves evidence behind if
- * something unrelated (e.g. a Cloudflare interstitial) breaks the test
- * instead of DEF-F4-08.
+ * Wrapped in withFailureEvidence so an unrelated breakage still leaves
+ * a labelled screenshot and page text behind alongside Playwright's
+ * own capture.
  */
 test.describe('FN-04 Cart Management', () => {
   test('TP-04-005 cart page controls', async ({ page }, testInfo) => {
-    test.fail(true, 'Confirmed defect DEF-F4-08: the cart line product link does not pre-select the correct variant.');
-
     const header = new HeaderBar(page);
     const product = new ProductPage(page);
     const cart = new CartPage(page);
@@ -54,7 +61,7 @@ test.describe('FN-04 Cart Management', () => {
         }
 
         await cart.goto();
-        expect(await cart.lineCount()).toBe(2);
+        expect.soft(await cart.lineCount()).toBe(2);
 
         const lineTotal1 = parseMoney(await cart.lineTotal(0).textContent());
         const lineTotal2 = parseMoney(await cart.lineTotal(1).textContent());
@@ -63,7 +70,7 @@ test.describe('FN-04 Cart Management', () => {
           body: `line 1: ${lineTotal1}\nline 2: ${lineTotal2}\norder total: ${orderTotal}`,
           contentType: 'text/plain',
         });
-        expect(orderTotal).toBeCloseTo(lineTotal1 + lineTotal2, 2);
+        expect.soft(orderTotal).toBeCloseTo(lineTotal1 + lineTotal2, 2);
       });
 
       await test.step('TC-04-008 #2 — remove line 1, line 2 survives, order total recalculates', async () => {
@@ -80,9 +87,9 @@ test.describe('FN-04 Cart Management', () => {
           contentType: 'text/plain',
         });
 
-        expect(closingLineCount).toBe(1);
-        expect(remainingTotal).toBeCloseTo(lineTotal2Before, 2);
-        expect(orderTotal).toBeCloseTo(lineTotal2Before, 2);
+        expect.soft(closingLineCount).toBe(1);
+        expect.soft(remainingTotal).toBeCloseTo(lineTotal2Before, 2);
+        expect.soft(orderTotal).toBeCloseTo(lineTotal2Before, 2);
       });
 
       await test.step('Reset — empty the cart before the next test case', async () => {
@@ -105,8 +112,8 @@ test.describe('FN-04 Cart Management', () => {
           body: description.trim(),
           contentType: 'text/plain',
         });
-        expect(description).toContain(CART_TEST_DATA.variant2.size);
-        expect(description).toContain(CART_TEST_DATA.variant2.colour);
+        expect.soft(description).toContain(CART_TEST_DATA.variant2.size);
+        expect.soft(description).toContain(CART_TEST_DATA.variant2.colour);
       });
 
       await test.step('TC-04-009 #2 — follow the cart line product link, check pre-selected variant', async () => {
@@ -120,8 +127,8 @@ test.describe('FN-04 Cart Management', () => {
           contentType: 'text/plain',
         });
 
-        expect(sizeValue).toBe(CART_TEST_DATA.variant2.size);
-        expect(colourValue).toBe(CART_TEST_DATA.variant2.colour);
+        expect.soft(sizeValue).toBe(CART_TEST_DATA.variant2.size);
+        expect.soft(colourValue).toBe(CART_TEST_DATA.variant2.colour);
       });
 
       await test.step('Reset — empty the cart before the next test case', async () => {
@@ -160,7 +167,7 @@ test.describe('FN-04 Cart Management', () => {
         await page.waitForURL(`**${ROUTES.catalog}`);
         await settleForEvidence(page);
         const destination = await recordUrl(page, testInfo, 'Continue Shopping');
-        expect(destination).toContain(ROUTES.catalog);
+        expect.soft(destination).toContain(ROUTES.catalog);
       });
 
       await test.step('TC-04-010 #3 — reopen cart, compare with initial values', async () => {
@@ -172,8 +179,8 @@ test.describe('FN-04 Cart Management', () => {
           contentType: 'text/plain',
         });
 
-        expect(closingLineCount).toBe(initialLineCount);
-        expect(closingOrderTotal).toBeCloseTo(initialOrderTotal, 2);
+        expect.soft(closingLineCount).toBe(initialLineCount);
+        expect.soft(closingOrderTotal).toBeCloseTo(initialOrderTotal, 2);
       });
 
       await test.step('Wrap Up — empty the cart, return to the store home page', async () => {

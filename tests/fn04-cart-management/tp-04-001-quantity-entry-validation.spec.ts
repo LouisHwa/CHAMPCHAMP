@@ -14,24 +14,27 @@ import { parseMoney, withFailureEvidence } from '../../utils/evidence';
  * refined TPS FN-04, which declares TC-04-002 and TC-04-003 both
  * intercase-dependent on TC-04-001).
  *
- * EXPECTED TO FAIL, BY DESIGN, on the TC-04-003 section only — marked
- * via test.fail() below. Confirmed in the Defect Log (DEF-F4-03): the
- * quantity field silently reverts to the previous value for any input
- * that is not a positive integer, with NO validation message shown at
- * all. The TC-04-001/002 sections (valid quantity, zero-quantity
- * removal) have no known defect and are hard-asserted; test.fail()
- * applies to the whole test, so this failing section is what determines
- * the overall result even though the earlier sections genuinely pass.
+ * REPORTS AS A REAL FAILURE. test.fail() was removed by team decision on
+ * 13 August: it made Playwright report an unmet expected result as
+ * "passed", so the console count contradicted the Defect Log and any
+ * unrelated breakage (a Cloudflare interstitial, a timeout) was hidden
+ * behind the same green tick. The run now states the true number of
+ * failures.
  *
- * Wrapped in withFailureEvidence — see the project's established
- * pattern: test.fail() suppresses Playwright's automatic
- * screenshot/trace/video capture, so this is what leaves evidence
- * behind if something unrelated (e.g. a Cloudflare interstitial) breaks
- * the test instead of DEF-F4-03 itself.
+ * Every expected-result check is expect.soft(), so a failure is recorded
+ * and execution CONTINUES to the end of the procedure — one run surfaces
+ * every unmet result rather than stopping at the first. Set Up and Reset
+ * preconditions stay hard: if the cart is not empty when the procedure
+ * starts, the run is invalid and continuing would only cascade noise.
+ *
+ * Expected failures here are the TC-04-003 section, confirming DEF-F4-03:
+ * the quantity field silently reverts to the previous value for any input
+ * that is not a positive integer, with NO validation message shown. The
+ * TC-04-001/002 sections (valid quantity, zero-quantity removal) have no
+ * known defect and are expected to pass.
  */
 test.describe('FN-04 Cart Management', () => {
   test('TP-04-001 quantity entry validation', async ({ page }, testInfo) => {
-    test.fail(true, 'Confirmed defect DEF-F4-03: invalid quantity silently reverts, no validation message is ever shown.');
     // This procedure merges what used to be three separate tests
     // (TC-04-001/002/003), and the default 30s timeout — already tight
     // with slowMo pacing added — cut it off mid-run, confirmed live.
@@ -92,7 +95,7 @@ test.describe('FN-04 Cart Management', () => {
           contentType: 'text/plain',
         });
 
-        expect(lineCount).toBe(1);
+        expect.soft(lineCount).toBe(1);
       });
 
       await test.step('TC-04-001 #2 — commit quantity 1', async () => {
@@ -109,9 +112,9 @@ test.describe('FN-04 Cart Management', () => {
           contentType: 'text/plain',
         });
 
-        expect(committedQty).toBe('1');
-        expect(lineTotal).toBeCloseTo(1 * unitPrice, 2);
-        expect(orderTotal).toBeCloseTo(lineTotal, 2);
+        expect.soft(committedQty).toBe('1');
+        expect.soft(lineTotal).toBeCloseTo(1 * unitPrice, 2);
+        expect.soft(orderTotal).toBeCloseTo(lineTotal, 2);
       });
 
       await test.step('TC-04-001 #3 — commit quantity 3, without removing the product', async () => {
@@ -127,9 +130,9 @@ test.describe('FN-04 Cart Management', () => {
           contentType: 'text/plain',
         });
 
-        expect(committedQty).toBe('3');
-        expect(lineTotal).toBeCloseTo(3 * unitPrice, 2);
-        expect(orderTotal).toBeCloseTo(lineTotal, 2);
+        expect.soft(committedQty).toBe('3');
+        expect.soft(lineTotal).toBeCloseTo(3 * unitPrice, 2);
+        expect.soft(orderTotal).toBeCloseTo(lineTotal, 2);
       });
 
       await test.step('TC-04-002 #1 — remove, re-add the product, confirm one line displayed', async () => {
@@ -151,7 +154,7 @@ test.describe('FN-04 Cart Management', () => {
           body: `line count: ${lineDisplayed}\nline description: ${lineDescription?.trim() ?? '(none)'}`,
           contentType: 'text/plain',
         });
-        expect(lineDisplayed).toBe(1);
+        expect.soft(lineDisplayed).toBe(1);
       });
 
       await test.step('TC-04-002 #2 — set quantity to 0, line removed, order total returns to nothing', async () => {
@@ -170,8 +173,8 @@ test.describe('FN-04 Cart Management', () => {
           contentType: 'text/plain',
         });
 
-        expect(closingLineCount).toBe(0);
-        expect(orderTotal).toBeCloseTo(0, 2);
+        expect.soft(closingLineCount).toBe(0);
+        expect.soft(orderTotal).toBeCloseTo(0, 2);
       });
 
       await test.step('TC-04-003 #1 — re-add the product, establish baseline quantity 2', async () => {
@@ -186,7 +189,7 @@ test.describe('FN-04 Cart Management', () => {
         await cart.lineQuantityInput(0).fill('2');
         await cart.updateButton.click();
         await cart.goto();
-        expect(await cart.lineQuantityInput(0).inputValue()).toBe('2');
+        expect.soft(await cart.lineQuantityInput(0).inputValue()).toBe('2');
       });
 
       const invalidValues: { label: string; value: string; step: string }[] = [

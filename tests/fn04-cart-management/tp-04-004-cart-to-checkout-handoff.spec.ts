@@ -13,22 +13,31 @@ import { withFailureEvidence } from '../../utils/evidence';
  * TD-04-V1 = M/Blue, TD-04-N order note) already matched the refined
  * document's bindings, so no data change was needed here.
  *
- * EXPECTED TO FAIL, BY DESIGN — marked via test.fail() below. Confirmed
- * in the Defect Log (DEF-F4-07): an order note entered in the cart is
+ * REPORTS AS A REAL FAILURE. test.fail() was removed by team decision on
+ * 13 August: it made Playwright report an unmet expected result as
+ * "passed", so the console count contradicted the Defect Log and any
+ * unrelated breakage (a Cloudflare interstitial, a timeout) was hidden
+ * behind the same green tick. The run now states the true number of
+ * failures.
+ *
+ * Every expected-result check is expect.soft(), so a failure is recorded
+ * and execution CONTINUES to the end of the procedure — one run surfaces
+ * every unmet result rather than stopping at the first. Set Up and Reset
+ * preconditions stay hard: if the cart is not empty when the procedure
+ * starts, the run is invalid and continuing would only cascade noise.
+ *
+ * Expected failure here confirms DEF-F4-07: an order note entered in the cart is
  * not displayed at checkout. The variant/quantity/total handoff itself
  * (#1 to #4) has no known defect and should pass; only the order-note
- * check (#5) is expected to fail — but since test.fail() applies to the
- * whole test, that one failure is what determines the overall result.
+ * check (#5) is expected to fail, so a correct run reports exactly one
+ * failed assertion.
  *
- * Wrapped in withFailureEvidence — test.fail() suppresses Playwright's
- * automatic failure capture, so this is what leaves evidence behind if
- * something unrelated (e.g. a Cloudflare interstitial) breaks the test
- * instead of DEF-F4-07.
+ * Wrapped in withFailureEvidence so an unrelated breakage still leaves
+ * a labelled screenshot and page text behind alongside Playwright's
+ * own capture.
  */
 test.describe('FN-04 Cart Management', () => {
   test('TP-04-004 cart to checkout handoff', async ({ page }, testInfo) => {
-    test.fail(true, 'Confirmed defect DEF-F4-07: the order note entered in the cart never appears at checkout.');
-
     const header = new HeaderBar(page);
     const product = new ProductPage(page);
     const cart = new CartPage(page);
@@ -59,9 +68,9 @@ test.describe('FN-04 Cart Management', () => {
           contentType: 'text/plain',
         });
 
-        expect(description).toContain(CART_TEST_DATA.variant1.size);
-        expect(description).toContain(CART_TEST_DATA.variant1.colour);
-        expect(await cart.lineQuantityInput(0).inputValue()).toBe('1');
+        expect.soft(description).toContain(CART_TEST_DATA.variant1.size);
+        expect.soft(description).toContain(CART_TEST_DATA.variant1.colour);
+        expect.soft(await cart.lineQuantityInput(0).inputValue()).toBe('1');
       });
 
       await test.step('TC-04-007 #3 — enter order note, record acceptance', async () => {
@@ -73,7 +82,7 @@ test.describe('FN-04 Cart Management', () => {
           body: noteValue,
           contentType: 'text/plain',
         });
-        expect(noteValue).toBe(CART_TEST_DATA.orderNote);
+        expect.soft(noteValue).toBe(CART_TEST_DATA.orderNote);
       });
 
       await test.step('TC-04-007 #4 — Checkout opens with items, quantities, subtotal, total', async () => {
@@ -85,7 +94,7 @@ test.describe('FN-04 Cart Management', () => {
           body: `${CART_TEST_DATA.productV} visible on checkout page: ${showsItem}`,
           contentType: 'text/plain',
         });
-        expect(showsItem).toBe(true);
+        expect.soft(showsItem).toBe(true);
       });
 
       await test.step('TC-04-007 #5 — checkout summary shows the order note', async () => {
@@ -95,7 +104,7 @@ test.describe('FN-04 Cart Management', () => {
           body: `order note "${CART_TEST_DATA.orderNote}" visible on checkout page: ${noteVisible}`,
           contentType: 'text/plain',
         });
-        expect(noteVisible, 'TC-04-007 expects the cart order note to appear in the checkout summary.').toBe(true);
+        expect.soft(noteVisible, 'TC-04-007 expects the cart order note to appear in the checkout summary.').toBe(true);
       });
 
       await test.step('Wrap Up — navigate away from checkout, empty cart, return home', async () => {

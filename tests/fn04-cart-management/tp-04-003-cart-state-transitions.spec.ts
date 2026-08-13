@@ -13,8 +13,20 @@ import { withFailureEvidence } from '../../utils/evidence';
  * refined TPS FN-04, and now using TD-04-A/TD-04-B (Striped top / Grey
  * jacket) rather than Bronze sandals/Striped top.
  *
- * EXPECTED TO FAIL, BY DESIGN — marked via test.fail() below. Confirmed
- * in the Defect Log: DEF-F4-01 (cart never updates in real time — a
+ * REPORTS AS A REAL FAILURE. test.fail() was removed by team decision on
+ * 13 August: it made Playwright report an unmet expected result as
+ * "passed", so the console count contradicted the Defect Log and any
+ * unrelated breakage (a Cloudflare interstitial, a timeout) was hidden
+ * behind the same green tick. The run now states the true number of
+ * failures.
+ *
+ * Every expected-result check is expect.soft(), so a failure is recorded
+ * and execution CONTINUES to the end of the procedure — one run surfaces
+ * every unmet result rather than stopping at the first. Set Up and Reset
+ * preconditions stay hard: if the cart is not empty when the procedure
+ * starts, the run is invalid and continuing would only cascade noise.
+ *
+ * Expected failures here confirm DEF-F4-01 (cart never updates in real time — a
  * manual refresh is required before a change appears) and DEF-F4-02 (the
  * quantity field's totals only update on Update-click/Enter, not
  * on-change). Each transition below checks the header cart count
@@ -23,17 +35,14 @@ import { withFailureEvidence } from '../../utils/evidence';
  * reload afterward confirms the underlying state did change server-side,
  * so this is evidencing "not live," not "didn't happen."
  *
- * Wrapped in withFailureEvidence — test.fail() suppresses Playwright's
- * automatic failure capture, so this is what leaves evidence behind if
- * something unrelated (e.g. a Cloudflare interstitial) breaks the test
- * instead of DEF-F4-01/02.
+ * Wrapped in withFailureEvidence so an unrelated breakage still leaves
+ * a labelled screenshot and page text behind alongside Playwright's
+ * own capture.
  *
  * Intercase dependency: TP-04-001's zero-quantity removal step.
  */
 test.describe('FN-04 Cart Management', () => {
   test('TP-04-003 cart state transitions', async ({ page }, testInfo) => {
-    test.fail(true, 'Confirmed defects DEF-F4-01/DEF-F4-02: cart never reflects changes without a manual refresh.');
-
     const header = new HeaderBar(page);
     const product = new ProductPage(page);
     const cart = new CartPage(page);
@@ -141,7 +150,7 @@ test.describe('FN-04 Cart Management', () => {
         });
 
         expect.soft(committedQty, 'TC-04-006 #4 expects the committed quantity to be 2.').toBe('2');
-        expect(await cart.lineCount()).toBeGreaterThan(0);
+        expect.soft(await cart.lineCount()).toBeGreaterThan(0);
       });
 
       await test.step('TC-04-006 #5 — remove product A while B remains (state stays S2)', async () => {

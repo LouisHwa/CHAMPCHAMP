@@ -13,8 +13,20 @@ import { captureCrashEvidence, withFailureEvidence } from '../../utils/evidence'
  * without a page crash. Covers TC-04-004, TC-04-005 (merged per the
  * refined TPS FN-04).
  *
- * EXPECTED TO FAIL, BY DESIGN — marked via test.fail() below. Two
- * confirmed defects apply:
+ * REPORTS AS A REAL FAILURE. test.fail() was removed by team decision on
+ * 13 August: it made Playwright report an unmet expected result as
+ * "passed", so the console count contradicted the Defect Log and any
+ * unrelated breakage (a Cloudflare interstitial, a timeout) was hidden
+ * behind the same green tick. The run now states the true number of
+ * failures.
+ *
+ * Every expected-result check is expect.soft(), so a failure is recorded
+ * and execution CONTINUES to the end of the procedure — one run surfaces
+ * every unmet result rather than stopping at the first. Set Up and Reset
+ * preconditions stay hard: if the cart is not empty when the procedure
+ * starts, the run is invalid and continuing would only cascade noise.
+ *
+ * Expected failures here confirm two defects:
  *   DEF-F4-05 — no stock quantity is ever shown on product pages, and
  *     the store accepts any quantity with no inventory limit at all.
  *     TC-04-004's own premise (recording stock S, then testing S and
@@ -29,16 +41,14 @@ import { captureCrashEvidence, withFailureEvidence } from '../../utils/evidence'
  *     down the rest of the test, reusing the same helper proven for
  *     this defect previously.
  *
- * Wrapped in withFailureEvidence — test.fail() suppresses Playwright's
- * automatic failure capture, so this is what leaves evidence behind if
- * something unrelated (e.g. a Cloudflare interstitial) breaks the test
- * instead of DEF-F4-05/DEF-F4-04 themselves.
+ * Wrapped in withFailureEvidence so an unrelated breakage still leaves
+ * a labelled screenshot and page text behind alongside Playwright's
+ * own capture.
  *
  * Intercase dependency: TP-04-001's valid quantity acceptance step.
  */
 test.describe('FN-04 Cart Management', () => {
   test('TP-04-002 stock limit and large quantity handling', async ({ page }, testInfo) => {
-    test.fail(true, 'Confirmed defects DEF-F4-05/DEF-F4-04: no real stock limit is ever enforced, and quantities above 1,000,000 crash the cart page.');
     test.setTimeout(90_000);
 
     const header = new HeaderBar(page);
@@ -123,7 +133,7 @@ test.describe('FN-04 Cart Management', () => {
           body: `committed quantity: ${committedQty}`,
           contentType: 'text/plain',
         });
-        expect(committedQty).toBe(String(CART_TEST_DATA.assumedStock));
+        expect.soft(committedQty).toBe(String(CART_TEST_DATA.assumedStock));
       });
 
       await test.step('TC-04-004 #3 — quantity S+1 expected refused, reverting to S', async () => {
