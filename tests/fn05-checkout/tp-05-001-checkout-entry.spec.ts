@@ -4,7 +4,7 @@ import { CatalogPage } from '../../pages/CatalogPage';
 import { ProductPage } from '../../pages/ProductPage';
 import { CartPage } from '../../pages/CartPage';
 import { CheckoutPage } from '../../pages/CheckoutPage';
-import { startSignedInContext } from './_helpers';
+import { startSignedInContext, closeContextWithVideo } from './_helpers';
 import { recordUrl } from '../../utils/evidence';
 
 /**
@@ -83,7 +83,7 @@ test.describe('FN-05 Checkout', () => {
       expect(await cart.lineCount()).toBe(0);
     });
 
-    const signedIn = await startSignedInContext(browser);
+    const signedIn = await startSignedInContext(browser, testInfo);
 
     await test.step('TC-05-001 #2 — signed-in checkout entry, checkout opens for the signed-in shopper', async () => {
       await signedIn.page.goto('/account', { waitUntil: 'domcontentloaded' });
@@ -119,7 +119,7 @@ test.describe('FN-05 Checkout', () => {
       }
       await signedIn.header.gotoHome();
       await signedIn.header.logOutLink.click().catch(() => {});
-      await signedIn.context.close();
+      await closeContextWithVideo(signedIn.context, signedIn.page, testInfo, 'TP-05-001 signed-in browser');
 
       await header.gotoHome();
     });

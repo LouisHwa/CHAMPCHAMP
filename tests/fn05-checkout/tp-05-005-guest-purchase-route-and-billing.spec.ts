@@ -39,18 +39,26 @@ const CART_ITEMS = [PRODUCTS.greyJacket, PRODUCTS.bronzeSandals];
  * as its prerequisite) — that's a document-level intercase dependency,
  * not something this file can enforce across separate test runs.
  *
- * EXPECTED TO FAIL, BY DESIGN, on the TC-05-009 (My Cart dropdown)
- * section only — marked via test.fail() below. Reproduces DEF-F4-01
- * ("Cart does not update in real time; items only appear after a
- * manual page refresh"), already logged for FN-04: the dropdown is
- * opened right after an add-to-cart click on the same page, and its
- * row markup is a server-rendered snapshot from that page's initial
- * load, so it doesn't reflect the same-page AJAX add. TC-05-008 (guest
- * purchase) and TC-05-013 (separate billing) have no known defect and
- * are hard-asserted; test.fail() applies to the whole test, so the
- * dropdown failure is what determines the overall result even though
- * the other two sections — including both order completions — genuinely
- * pass.
+ * THIS PROCEDURE IS EXPECTED TO REPORT "FAIL", AND THAT IS THE CORRECT
+ * RESULT. The TC-05-009 section asserts an outcome the store does not
+ * deliver, so the procedure genuinely does not pass — the Fail is
+ * cross-referenced to DEF-F4-01 in the test log's Remark column. (It
+ * previously called test.fail(), which inverted the result and reported
+ * "passed" precisely because it failed; that was wrong for a test log
+ * and has been removed.)
+ *
+ * DEF-F4-01 ("Cart does not update in real time; items only appear after
+ * a manual page refresh") is already logged for FN-04: the dropdown is
+ * opened right after an add-to-cart click on the same page, and its row
+ * markup is a server-rendered snapshot from that page's initial load, so
+ * it doesn't reflect the same-page AJAX add. That section is
+ * soft-asserted so the run continues to the end and every observation is
+ * captured — a Fail should arrive with the complete evidence set.
+ *
+ * TC-05-008 (guest purchase) and TC-05-013 (separate billing) have no
+ * contradicting defect and are hard-asserted — a failure in one of those
+ * is something new and deserves investigation rather than being
+ * attributed to DEF-F4-01. Both complete a REAL order.
  *
  * V2 update: every cart this procedure builds now holds TD-05-A AND
  * TD-05-B (Bronze Sandals), not TD-05-A alone — per the refined TPS
@@ -63,7 +71,6 @@ const CART_ITEMS = [PRODUCTS.greyJacket, PRODUCTS.bronzeSandals];
  */
 test.describe('FN-05 Checkout', () => {
   test('TP-05-005 guest purchase, checkout route and billing address', async ({ page }, testInfo) => {
-    test.fail(true, 'Confirmed defect DEF-F4-01: the My Cart dropdown does not reflect a same-page AJAX add.');
     test.setTimeout(150_000);
 
     const header = new HeaderBar(page);

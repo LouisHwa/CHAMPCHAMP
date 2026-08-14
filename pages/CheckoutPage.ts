@@ -67,10 +67,16 @@ export class CheckoutPage {
     // Confirmed unique — no autofill shadow duplicate for email.
     this.emailField = page.locator('input[name="email"]');
 
-    // getByLabel matches the hidden autofill shadow input too (same
-    // strict-mode duplicate issue as the text fields) — role-scoped to
-    // the real <select> (combobox) avoids it.
-    this.countrySelect = page.getByRole('combobox', { name: 'Country/Region' });
+    // CONFIRMED LIVE (13 Aug, TP-05-004): once the billing address form is
+    // rendered, TWO Country/Region selects exist and a role- or label-based
+    // lookup matches both, throwing a strict-mode violation:
+    //   autocomplete="shipping country-name"  (delivery)
+    //   autocomplete="billing country-name"   (billing)
+    // Their ids are hashed per render (SelectP0-43 / SelectP0-172) and the
+    // billing one's `form` attribute is generated too, so `autocomplete` is
+    // the only stable discriminator — it is semantic HTML the platform sets
+    // deliberately, not build output.
+    this.countrySelect = page.locator('select[name="countryCode"][autocomplete~="shipping"]');
 
     this.shippingMethodSection = page.locator('h2', { hasText: 'Shipping method' }).locator('xpath=..');
     this.costSummaryTable = page.getByRole('table', { name: 'Cost summary' });
@@ -104,9 +110,19 @@ export class CheckoutPage {
     'Phone (optional)': 'phone',
   };
 
-  /** Delivery-address fields, e.g. deliveryField('Last name'), deliveryField('Postcode'). */
+  /**
+   * Delivery-address fields, e.g. deliveryField('Last name'), deliveryField('Postcode').
+   *
+   * The billing form carries inputs with the SAME name attributes, so once
+   * it is rendered a bare `[name=]` match is ambiguous in exactly the way
+   * countrySelect was (see its comment). Billing inputs are excluded by
+   * their autocomplete token rather than by naming the shipping one, so
+   * this still resolves if the platform ever changes the shipping token.
+   */
   deliveryField(label: keyof typeof CheckoutPage.FIELD_NAMES): Locator {
-    return this.page.locator(`input[name="${CheckoutPage.FIELD_NAMES[label]}"]:not([aria-hidden="true"])`);
+    return this.page.locator(
+      `input[name="${CheckoutPage.FIELD_NAMES[label]}"]:not([aria-hidden="true"]):not([autocomplete~="billing"])`,
+    );
   }
 
   /** Billing-address fields, shown once billingAddressCheckbox is unchecked. Same labels/shape as delivery. */
@@ -116,7 +132,7 @@ export class CheckoutPage {
 
   /** The Country/Region select within the (revealed) billing address section. */
   get billingCountrySelect(): Locator {
-    return this.billingAddressSection.getByRole('combobox', { name: 'Country/Region' });
+    return this.page.locator('select[name="countryCode"][autocomplete~="billing"]');
   }
 
   /** Card fields are cross-origin iframes; locate each by its stable title, not its hashed id. */

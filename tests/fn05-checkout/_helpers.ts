@@ -37,8 +37,12 @@ export const NAME_ON_CARD = 'Test User';
  * don't inherit it from playwright.config.ts the way the default
  * page/context fixture does.
  */
-export async function startSignedInContext(browser: Browser) {
-  const context = await browser.newContext({ baseURL: BASE_URL, storageState: STORAGE_STATE_PATH });
+export async function startSignedInContext(browser: Browser, testInfo?: TestInfo) {
+  const context = await browser.newContext({
+    baseURL: BASE_URL,
+    storageState: STORAGE_STATE_PATH,
+    ...videoOptions(testInfo),
+  });
   const page = await context.newPage();
   const header = new HeaderBar(page);
   const catalog = new CatalogPage(page);
@@ -46,6 +50,46 @@ export async function startSignedInContext(browser: Browser) {
   const cart = new CartPage(page);
   const checkout = new CheckoutPage(page);
   return { context, page, header, catalog, product, cart, checkout };
+}
+
+/**
+ * Video options for a manually created context.
+ *
+ * A context made with browser.newContext() does NOT inherit `video` from
+ * playwright.config.ts's `use` block — only the built-in page/context
+ * fixture does, the same reason baseURL has to be passed explicitly
+ * above. Trace and screenshots still arrive, because the runner
+ * instruments contexts AFTER creation, but recordVideo has to be set AT
+ * creation. Without this, the signed-in half of TP-05-001 and the whole
+ * of TP-05-006 record no video at all.
+ */
+export function videoOptions(testInfo?: TestInfo) {
+  return testInfo ? { recordVideo: { dir: testInfo.outputDir } } : {};
+}
+
+/**
+ * Closes a manually created context and attaches its video to the report.
+ *
+ * Playwright only finalises a recording when its context closes, and the
+ * path is only resolvable afterwards — so the Video handle is taken
+ * before the close and awaited after it. Best-effort throughout: a
+ * missing recording must never be the reason a procedure reports failure.
+ */
+export async function closeContextWithVideo(
+  context: Awaited<ReturnType<Browser['newContext']>>,
+  page: Page,
+  testInfo: TestInfo,
+  label: string,
+) {
+  const video = page.video();
+  await context.close().catch(() => {});
+  if (!video) return;
+  try {
+    await testInfo.attach(`Video — ${label}`, { path: await video.path(), contentType: 'video/webm' });
+  } catch {
+    // Recording may not exist if the context died before any frame was
+    // captured — not worth failing a procedure over.
+  }
 }
 
 /**

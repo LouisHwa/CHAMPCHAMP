@@ -78,9 +78,17 @@ export default defineConfig({
         // so cache/cookies start empty for every test.
         storageState: undefined,
 
-        trace: "retain-on-failure",
-        screenshot: "only-on-failure",
-        video: "retain-on-failure",
+        // Unconditionally "on" for FN-05, not env-gated the way main has
+        // it. Every other suite can be re-run cheaply if a run turns out
+        // to have recorded nothing; these procedures place four REAL
+        // orders on the live storefront and are the most exposed to
+        // Cloudflare pacing limits (A-009), so a run that produces no
+        // evidence cannot simply be repeated. A passing procedure needs
+        // its trace and video as much as a failing one — a pass with no
+        // evidence cannot be shown to have been executed.
+        trace: "on",
+        screenshot: "on",
+        video: "on",
 
         // Cloudflare served an interstitial during a signed-out FN-04 batch
         // on 7 August — automating a live, Cloudflare-protected site at

@@ -37,7 +37,12 @@ const FRANCE_RATE = 20.0;
 
 test.describe('FN-05 Checkout', () => {
   test('TP-05-002 shipping destination and cost', async ({ page }, testInfo) => {
-    test.setTimeout(120_000);
+    // Longest procedure in FN-05: three full cart builds, each followed
+    // by a checkout and a rate recalculation. V2's two-item carts added
+    // a second product fetch to each build. A 9 Aug run reached only
+    // TC-05-011 in 1.7 min, so the old 120s cap would have expired
+    // part-way through TC-05-012 even on a clean run.
+    test.setTimeout(240_000);
 
     await test.step('TC-05-002 — UK/France rates recorded as oracles before any address is entered', async () => {
       await testInfo.attach('Oracle rates (TC-05-002)', {

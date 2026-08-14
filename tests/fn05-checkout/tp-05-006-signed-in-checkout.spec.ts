@@ -3,6 +3,7 @@ import { ConfirmationPage } from '../../pages/ConfirmationPage';
 import { MyAccountPage } from '../../pages/MyAccountPage';
 import {
   startSignedInContext,
+  closeContextWithVideo,
   addSecondProduct,
   fillDeliveryAddress,
   fillCard,
@@ -44,7 +45,7 @@ test.describe('FN-05 Checkout', () => {
   test('TP-05-006 signed-in checkout', async ({ browser }, testInfo) => {
     test.setTimeout(120_000);
 
-    const signedIn = await startSignedInContext(browser);
+    const signedIn = await startSignedInContext(browser, testInfo);
     const { page, header, catalog, product, cart, checkout } = signedIn;
     const confirmation = new ConfirmationPage(page);
     const account = new MyAccountPage(page);
@@ -148,7 +149,7 @@ test.describe('FN-05 Checkout', () => {
       await header.gotoHome();
       await cart.goto();
       expect(await cart.lineCount()).toBe(0);
-      await signedIn.context.close();
+      await closeContextWithVideo(signedIn.context, signedIn.page, testInfo, 'TP-05-006 signed-in browser');
     });
   });
 });
