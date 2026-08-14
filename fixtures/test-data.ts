@@ -115,3 +115,67 @@ export const ACCOUNT_TEST_DATA = {
   wishlistItem1: PRODUCTS.greyJacket,
   wishlistItem2: PRODUCTS.stripedTop,
 } as const;
+
+/**
+ * FN-07 (Authentication) bound test data, TPS Table 2.7a.
+ *
+ * These live here rather than in .env, unlike TEST_ACCOUNT, because every
+ * value below is printed in the TPS — a shared controlled document — so
+ * none of them is a secret. The one FN-07 value that IS unpublished is
+ * TD-07-ACC's original password, which stays in .env as
+ * TEST_ACCOUNT_PASSWORD (see fixtures/credentials.ts). TD-07-ACC's address
+ * is also already wired to .env as TEST_ACCOUNT_EMAIL and used by FN-02
+ * through FN-06, so it is read from there rather than duplicated here.
+ *
+ * CONSUMED ON USE: n1, n2 and n3 register successfully and cannot be
+ * reused. A later cycle rebinds them by advancing the sequence number
+ * (+auth1a becomes +auth2a and so on) — change the values here only, since
+ * the specs refer to the identifier. nx must NEVER be used in a step that
+ * succeeds: TC-07-017 needs it as the unregistered comparator at password
+ * recovery, and a successful registration would destroy that.
+ *
+ * All addresses resolve to one mailbox by subaddressing, which the store
+ * treats as distinct addresses. Confirm that still holds before each cycle
+ * (A-004) and rebind using dot variants of the same mailbox if it stops.
+ */
+export const AUTH_TEST_DATA = {
+  /** TD-07-N1 — minimum-length password registration. Consumed on use. */
+  n1: 'competitiontdc2.0+auth1a@gmail.com',
+  /** TD-07-N2 — above-minimum password registration. Consumed on use. */
+  n2: 'competitiontdc2.0+auth1b@gmail.com',
+  /** TD-07-N3 — mid-partition password registration. Consumed on use. */
+  n3: 'competitiontdc2.0+auth1c@gmail.com',
+  /** TD-07-N4 — successful registration that sends a confirmation email. Consumed on use. */
+  n4: 'competitiontdc2.0+auth1d@gmail.com',
+  /** TD-07-NX — every attempt expected to be BLOCKED, plus TC-07-017's comparator. Never consumed. */
+  nx: 'competitiontdc2.0+authx@gmail.com',
+
+  /** TD-07-NAME — name values entered on the registration form. */
+  name: { firstName: 'Kelvin', lastName: 'Kan' },
+
+  /** TD-07-PW — carrier password, wherever the password is not the value under test. */
+  password: 'Password123',
+  /** TD-07-PWTMP — replacement password set by TP-07-005 (TC-07-013 #9). */
+  passwordTemp: 'TempPassword123',
+  /** TD-07-PWNEW — replacement password set by TP-07-006 (TC-07-016 #4). */
+  passwordNew: 'NewPassword123',
+  /** TD-07-BADEMAIL — structurally invalid, not a deliverable address. */
+  badEmail: 'kelvin@@example',
+  /** TD-07-BADPW — matches no account, used to reach the invalid credentials rule. */
+  badPassword: 'WrongPassword123',
+
+  /**
+   * Password length values stated literally by TC-07-001 to TC-07-003,
+   * where the length IS the variable rather than a carrier. Five and six
+   * are the boundaries; eight is the mid-partition value; four is the
+   * boundary immediately below the minimum.
+   */
+  passwords: {
+    atMinimum: 'abcde',
+    aboveMinimum: 'abcdef',
+    midPartition: 'P@ssw0rd',
+    belowMinimum: 'abcd',
+    belowMinimumOtherClass: '1234',
+    whitespaceOnly: '     ',
+  },
+} as const;

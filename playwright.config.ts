@@ -18,6 +18,18 @@ import { defineConfig, devices } from "@playwright/test";
 
 const isCI = !!process.env.CI;
 
+/**
+ * SPR-04 only requires evidence where a step fails, so a passing run
+ * records nothing by default — which is also what keeps artefact size
+ * sane in CI. Set EVIDENCE=1 to capture trace, video and screenshots on a
+ * green run as well, for reviewing how a procedure actually executed:
+ *   PowerShell   $env:EVIDENCE=1; npx playwright test ... --project=chromium
+ *   bash         EVIDENCE=1 npx playwright test ... --project=chromium
+ * There is no --video CLI flag, so this is the only way to get playback
+ * for a test that passes.
+ */
+const fullEvidence = !!process.env.EVIDENCE;
+
 export default defineConfig({
     testDir: "./tests",
 
@@ -47,8 +59,8 @@ export default defineConfig({
     // procedure with ~50 actions spends 30s on pacing alone. TP-04-003
     // timed out at exactly 30s for this reason on 8 August, which
     // test.fail() then reported as an expected failure. Specs that already
-    // set their own budget (e.g. TP-06-001/005 at 240s) are unaffected;
-    // this brings everything else in line with them.
+    // set their own budget (TP-04-001/002 at 90s, TP-04-006 at 120s) are
+    // unaffected; this brings everything else in line with them.
     timeout: 90_000,
     expect: { timeout: 7_000 },
 
@@ -67,9 +79,9 @@ export default defineConfig({
         // so cache/cookies start empty for every test.
         storageState: undefined,
 
-        trace: "retain-on-failure",
-        screenshot: "only-on-failure",
-        video: "retain-on-failure",
+        trace: fullEvidence ? "on" : "retain-on-failure",
+        screenshot: fullEvidence ? "on" : "only-on-failure",
+        video: fullEvidence ? "on" : "retain-on-failure",
 
         // Cloudflare served an interstitial during a signed-out FN-04 batch
         // on 7 August — automating a live, Cloudflare-protected site at
@@ -81,8 +93,26 @@ export default defineConfig({
         //   bash         SLOWMO=0 npx playwright test ...
         launchOptions: { slowMo: Number(process.env.SLOWMO ?? 600) },
 
-        actionTimeout: 10_000,
-        navigationTimeout: 20_000,
+        // A click that submits a form waits for the navigation it triggers,
+        // and that wait is bounded by actionTimeout — NOT navigationTimeout,
+        // which only covers an explicit page.goto. TP-04-001 aborted on
+        // 13 August clicking #update: the call log shows "click action done"
+        // followed by "waiting for scheduled navigations to finish", which
+        // then exceeded 10s while the storefront was responding slowly
+        // (Set Up took 29s that run against 5-8s the day before, with no
+        // Cloudflare challenge present). 30s absorbs a slow store without
+        // hiding a genuine hang, since the per-test budget still cuts in.
+        actionTimeout: 30_000,
+        // 20s was not enough: TP-04-004 died in Set Up on 10 August when
+        // page.goto('/cart') exceeded it, while the captured page text shows
+        // the storefront had rendered normally — so the content arrived and
+        // only the navigation event was late. This store is third-party
+        // heavy (the reason every page object navigates with
+        // 'domcontentloaded' rather than 'load' — see HeaderBar.gotoHome),
+        // and a slow local uplink produces the same signature. 45s absorbs
+        // both without masking a genuine hang, since the per-test budget
+        // still cuts in at 90s.
+        navigationTimeout: 45_000,
     },
 
     // TCS 2.1.1: latest stable Chrome, Firefox or Edge.
