@@ -94,7 +94,16 @@ export default defineConfig({
         //   bash         SLOWMO=0 npx playwright test ...
         launchOptions: { slowMo: Number(process.env.SLOWMO ?? 600) },
 
-        actionTimeout: 10_000,
+        // A click that submits a form waits for the navigation it triggers,
+        // and that wait is bounded by actionTimeout — NOT navigationTimeout,
+        // which only covers an explicit page.goto. TP-04-001 aborted on
+        // 13 August clicking #update: the call log shows "click action done"
+        // followed by "waiting for scheduled navigations to finish", which
+        // then exceeded 10s while the storefront was responding slowly
+        // (Set Up took 29s that run against 5-8s the day before, with no
+        // Cloudflare challenge present). 30s absorbs a slow store without
+        // hiding a genuine hang, since the per-test budget still cuts in.
+        actionTimeout: 30_000,
         // 20s was not enough: TP-04-004 died in Set Up on 10 August when
         // page.goto('/cart') exceeded it, while the captured page text shows
         // the storefront had rendered normally — so the content arrived and
