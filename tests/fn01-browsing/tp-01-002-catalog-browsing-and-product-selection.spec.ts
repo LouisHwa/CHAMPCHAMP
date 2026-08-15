@@ -96,6 +96,23 @@ test.describe('FN-01 Product Browsing and Navigation', () => {
       });
       expect(segments[0]).toBe('Home');
       expect(segments[segments.length - 1]).toBe(PRODUCTS.greyJacket);
+
+      // TCS expected result: "The breadcrumb trail reads Home > Catalog >
+      // Grey Jacket, reflecting the path taken to the product." Only the
+      // first and last segments were checked before, so a missing middle
+      // segment could not surface — which is exactly what DEF-F1-01
+      // (breadcrumb path accuracy) describes. Confirmed live: the trail
+      // reads "Home — Grey jacket" with no Catalog segment, so the path
+      // taken to the product is not reflected. Soft, so #4 and the Wrap Up
+      // still run.
+      expect.soft(
+        segments.length,
+        `TC-01-002 #3: TCS expects three segments, Home > Catalog > Grey Jacket (DEF-F1-01) — trail read: "${segments.join(' — ')}"`,
+      ).toBe(3);
+      expect.soft(
+        segments.map((s) => s.toLowerCase()),
+        `TC-01-002 #3: TCS expects a Catalog segment reflecting the path taken (DEF-F1-01) — trail read: "${segments.join(' — ')}"`,
+      ).toContain('catalog');
     });
 
     await test.step('TC-01-002 #4 — follow parent collection, if present', async () => {
@@ -112,6 +129,20 @@ test.describe('FN-01 Product Browsing and Navigation', () => {
           body: `Breadcrumb had no parent-collection segment: ${segments.join(' — ')}`,
           contentType: 'text/plain',
         });
+      }
+
+      // TCS expected result: "The catalogue at /collections/all is displayed,
+      // confirming the product ties back to the catalogue as its parent
+      // collection." The TPS writes the step conditionally so it stays
+      // executable either way, but the TCS still requires the tie-back. With
+      // no parent segment present the step cannot be performed at all, which
+      // is DEF-F1-02 (product parent collection). Soft, so the Wrap Up runs.
+      expect.soft(
+        hasParentCollectionSegment,
+        `TC-01-002 #4: TCS expects a parent collection segment leading back to /collections/all (DEF-F1-02) — breadcrumb read: "${segments.join(' — ')}"`,
+      ).toBe(true);
+      if (hasParentCollectionSegment) {
+        expect.soft(page.url(), 'TC-01-002 #4: following the parent collection should reach /collections/all').toContain(ROUTES.catalog);
       }
     });
 
