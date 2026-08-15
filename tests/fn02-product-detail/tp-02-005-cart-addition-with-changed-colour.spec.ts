@@ -10,17 +10,30 @@ import { recordUrl } from '../../utils/evidence';
  * to the cart with the correct (final) colour applied. Covers TC-02-005
  * (#1 to #3).
  *
- * Intercase dependency: TP-02-002 must have run (gallery image capture
- * on a colour change).
+ * PARTIALLY BLOCKED — A-013. Step 2 is blocked; steps 1 and 3 are
+ * executable and are the ones this procedure reports on.
  *
- * EXPECTED TO PASS. This procedure's objective is that the CART receives
- * the final colour selection (TD-02-G), not that the gallery image
- * updates. The gallery captures required by SPR-07 are evidence only and
- * are deliberately NOT asserted here — DEF-F2-01 (the image never updates
- * on a colour change) is discharged by TP-02-002, which owns that
- * objective and fails on it. Asserting it here as well would fail this
- * procedure for a defect outside its scope. The captures below stand as
- * corroborating evidence for DEF-F2-01.
+ * NO INTERCASE DEPENDENCY. The dependency this procedure used to declare
+ * on TC-02-002 has been REMOVED: TC-02-002 is now Blocked in full under
+ * A-013 and can never be discharged, and a dependency must not point at a
+ * blocked case. (The TPS drops its Set Up 1 accordingly and renumbers the
+ * remaining Set Up steps — document-side change.)
+ *
+ * DEF-F2-01 has been WITHDRAWN. No product in the catalogue carries a
+ * distinct gallery image per colour variant, so there is no variant image
+ * for the gallery to change to and REQ-F2-03 was never placed under test.
+ * That is store content configuration recorded as A-013, not a fault.
+ *
+ * Step 2's gallery captures are therefore evidence only, exactly as SPR-07
+ * asks, and nothing about the image is asserted here. The A-013 block
+ * condition itself is asserted once, by TP-02-002, which owns that
+ * environment check — repeating it here would duplicate the monitor
+ * without adding coverage.
+ *
+ * What this procedure DOES assert is its own objective, which is
+ * unaffected by A-013: that the cart line carries the LAST-selected
+ * colour (TD-02-G, Red) and the selected size (TD-02-D, S) — not the
+ * intermediate colour TD-02-F (Blue).
  *
  * Uses CartPage (a real navigation), not CartDrawer, for line counts —
  * CartDrawer's #drawer is a stale, server-rendered snapshot from page
@@ -28,10 +41,18 @@ import { recordUrl } from '../../utils/evidence';
  * (confirmed during TP-02-003; see CartDrawer.ts).
  */
 test.describe('FN-02 Product Detail', () => {
-  test('TP-02-005 cart addition with changed colour selection', async ({ page }, testInfo) => {
+  test('TP-02-005 [PARTIAL A-013] Changed colour applied to cart', async ({ page }, testInfo) => {
     const header = new HeaderBar(page);
     const product = new ProductPage(page);
     const cart = new CartPage(page);
+
+    testInfo.annotations.push({
+      type: 'blocked',
+      description:
+        'A-013 (partial, step 2 only): no colour variant carries an associated gallery image, ' +
+        'so ENV-07 is not satisfiable and TC-02-005 #2 cannot be evaluated. Steps 1 and 3 are ' +
+        'executable and are asserted; the gallery captures are recorded as SPR-07 evidence only.',
+    });
 
     let baselineLineCount = 0;
 
@@ -109,10 +130,22 @@ test.describe('FN-02 Product Detail', () => {
         contentType: 'text/plain',
       });
 
-      expect(closingLineCount).toBe(baselineLineCount + 1);
-      expect(lineDescription).toContain('S');
-      // The final colour selection (Red), not the intermediate one (Blue).
-      expect(lineDescription).toContain('Red');
+      // TC-02-005's own objective, unaffected by the A-013 block on step 2.
+      expect(
+        closingLineCount,
+        'TC-02-005 #3 expects the variant to be appended to the cart.',
+      ).toBe(baselineLineCount + 1);
+      expect(
+        lineDescription,
+        'TC-02-005 #3 expects the cart line to carry the selected size TD-02-D (S).',
+      ).toContain('S');
+      // The LAST colour selected (TD-02-G, Red), not the intermediate
+      // TD-02-F (Blue) — this is the whole point of the procedure.
+      expect(
+        lineDescription,
+        'TC-02-005 #3 expects the cart line to carry the last-selected colour TD-02-G (Red), ' +
+          'not the intermediate TD-02-F (Blue).',
+      ).toContain('Red');
     });
 
     await test.step('Wrap Up — empty the cart, return to the store home page', async () => {
