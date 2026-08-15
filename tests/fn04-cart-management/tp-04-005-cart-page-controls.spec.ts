@@ -39,9 +39,20 @@ import { parseMoney, recordUrl, settleForEvidence, withFailureEvidence } from '.
  * Wrapped in withFailureEvidence so an unrelated breakage still leaves
  * a labelled screenshot and page text behind alongside Playwright's
  * own capture.
+ *
+ * One step in the report - "Environmental cooldown" - is NOT part of the
+ * test procedure and carries no coverage. It is an idle pause added
+ * because the store's bot checkpoint aborted this procedure at TC-04-010
+ * #1 on two separate runs; see the comment at that step for the reasoning
+ * and for how to disable it.
  */
 test.describe('FN-04 Cart Management', () => {
   test('TP-04-005 cart page controls', async ({ page }, testInfo) => {
+    // The procedure itself runs in ~78s, but the environmental cooldown
+    // below is deliberately idle time on top of that, so the 90s project
+    // timeout would kill the run before TC-04-010 ever starts.
+    test.setTimeout(300_000);
+
     const header = new HeaderBar(page);
     const product = new ProductPage(page);
     const cart = new CartPage(page);
@@ -244,6 +255,41 @@ test.describe('FN-04 Cart Management', () => {
       let initialLineCount = 0;
       let initialLineTotals: number[] = [];
       let initialOrderTotal = 0;
+
+      /**
+       * NOT A PROCEDURE STEP. This is an automation-environment
+       * accommodation and carries no coverage: it asserts nothing, reads
+       * nothing and changes no state the procedure depends on.
+       *
+       * TP-04-005 is the heaviest FN-04 procedure (~25-30 navigations in
+       * ~78s). Two runs a day apart - 14 August 10:14 after a 16.3h rest,
+       * and 15 August 13:53 after a 27.6h rest - both reached the store's
+       * "Your connection needs to be verified" checkpoint at exactly this
+       * point, TC-04-010 #1, leaving that test case with no result on
+       * either occasion. Because the length of the rest BETWEEN runs made
+       * no difference, the trigger is request volume WITHIN a run, not a
+       * budget that drains overnight.
+       *
+       * The idle pause tests that reading: if the store's threshold is a
+       * rate (requests per window) the counter drains here and TC-04-010
+       * completes; if it is an absolute per-session count, the checkpoint
+       * still fires and the procedure has to be split or run manually.
+       *
+       * Set CHECKPOINT_COOLDOWN_MS=0 to disable.
+       */
+      const cooldownMs = Number(process.env.CHECKPOINT_COOLDOWN_MS ?? 90_000);
+      if (cooldownMs > 0) {
+        await test.step(`Environmental cooldown — idle ${cooldownMs / 1000}s before TC-04-010`, async () => {
+          await testInfo.attach('Environmental cooldown (not a procedure step)', {
+            body:
+              `idle for ${cooldownMs / 1000}s before TC-04-010 #1.\n` +
+              'Accommodates the store checkpoint that aborted this procedure at ' +
+              'this exact point on 14 and 15 August. No coverage, no assertions.',
+            contentType: 'text/plain',
+          });
+          await page.waitForTimeout(cooldownMs);
+        });
+      }
 
       await test.step('TC-04-010 #1 — add Product A, record cart lines and order total', async () => {
         await product.goto(CART_TEST_DATA.productAHandle);
