@@ -3,18 +3,23 @@ import { test, expect } from '../../utils/pacedTest';
 import { HeaderBar } from '../../pages/HeaderBar';
 import { ProductPage } from '../../pages/ProductPage';
 import { CartPage } from '../../pages/CartPage';
-import { CART_TEST_DATA, ROUTES } from '../../fixtures/test-data';
+import { CART_TEST_DATA } from '../../fixtures/test-data';
 import { parseMoney, recordUrl, settleForEvidence, withFailureEvidence } from '../../utils/evidence';
 
 /**
  * TP-04-005 — Verify a cart line is removed while other lines remain
- * with the order total recalculated, that a cart line product link
- * opens the product detail page with the correct variant selected, and
- * that Continue Shopping returns the shopper to the catalogue with the
- * cart contents unchanged. Covers TC-04-008, TC-04-009, TC-04-010
- * (merged per the refined TPS FN-04, replacing old TP-04-008/009/010).
- * The two-line scenario now uses TD-04-A/TD-04-B (Striped top / Grey
- * jacket) rather than Grey jacket/Bronze sandals.
+ * with the order total recalculated, and that a cart line product link
+ * opens the product detail page with the correct variant selected.
+ * Covers TC-04-008 and TC-04-009 (merged per the refined TPS FN-04,
+ * replacing old TP-04-008/009). The two-line scenario now uses
+ * TD-04-A/TD-04-B (Striped top / Grey jacket) rather than Grey
+ * jacket/Bronze sandals.
+ *
+ * TC-04-010 (Continue Shopping) was dropped from this procedure when the
+ * TPS was cut back to the six steps now implemented below; its steps,
+ * the recorded initial-cart values they compared against, and the
+ * environmental cooldown that only existed to get the run as far as
+ * TC-04-010 #1 have all been removed with it.
  *
  * REPORTS AS A REAL FAILURE. test.fail() was removed by team decision on
  * 13 August: it made Playwright report an unmet expected result as
@@ -32,26 +37,21 @@ import { parseMoney, recordUrl, settleForEvidence, withFailureEvidence } from '.
  * Expected failure here is the TC-04-009 (product link) section,
  * confirming DEF-F4-08: the cart line's product link opens the product without
  * the correct variant selected, landing on the PDP's usual auto-selected
- * defaults instead. TC-04-008 (line removal) and TC-04-010 (Continue
- * Shopping) have no known defect and are expected to pass, so a correct
- * run reports failures only from the TC-04-009 section.
+ * defaults instead. TC-04-008 (line removal) has no known defect and is
+ * expected to pass, so a correct run reports failures only from the
+ * TC-04-009 section.
  *
  * Wrapped in withFailureEvidence so an unrelated breakage still leaves
  * a labelled screenshot and page text behind alongside Playwright's
  * own capture.
- *
- * One step in the report - "Environmental cooldown" - is NOT part of the
- * test procedure and carries no coverage. It is an idle pause added
- * because the store's bot checkpoint aborted this procedure at TC-04-010
- * #1 on two separate runs; see the comment at that step for the reasoning
- * and for how to disable it.
  */
 test.describe('FN-04 Cart Management', () => {
   test('TP-04-005 cart page controls', async ({ page }, testInfo) => {
-    // The procedure itself runs in ~78s, but the environmental cooldown
-    // below is deliberately idle time on top of that, so the 90s project
-    // timeout would kill the run before TC-04-010 ever starts.
-    test.setTimeout(300_000);
+    // Shorter now that TC-04-010 and its cooldown are gone, but still the
+    // heaviest FN-04 procedure (~20 navigations at slowMo 600), and the
+    // 90s project timeout leaves it no headroom on a slow store — TP-04-004
+    // needed 45s for a single /cart navigation on 10 August.
+    test.setTimeout(180_000);
 
     const header = new HeaderBar(page);
     const product = new ProductPage(page);
@@ -61,10 +61,10 @@ test.describe('FN-04 Cart Management', () => {
       /**
        * Clicks a control that makes the STORE navigate, and waits for that
        * navigation to land before anything reads the page. Remove is an
-       * <a href="/cart/change?...">, the cart line product link is an <a>,
-       * and Continue Shopping is an <a>; reading any of them mid-navigation
-       * throws "Execution context was destroyed", which would surface as an
-       * automation failure rather than a finding about the store.
+       * <a href="/cart/change?..."> and the cart line product link is an
+       * <a>; reading either mid-navigation throws "Execution context was
+       * destroyed", which would surface as an automation failure rather
+       * than a finding about the store.
        */
       async function clickAndSettle(control: Locator) {
         const navigated = page.waitForEvent('framenavigated', { timeout: 15_000 }).catch(() => null);
@@ -213,8 +213,7 @@ test.describe('FN-04 Cart Management', () => {
       await test.step('TC-04-009 #2 — follow the cart line product link, check pre-selected variant', async () => {
         // Settle before recording: page.url() does not wait, so without this
         // the SPR-01 record can capture /cart — the page the click just left —
-        // rather than the product page the step is about. Same fix already
-        // applied to Continue Shopping below.
+        // rather than the product page the step is about.
         await clickAndSettle(cart.lineProductLink(0));
         const destination = await recordUrl(page, testInfo, 'Cart line product link');
         expect
@@ -242,142 +241,21 @@ test.describe('FN-04 Cart Management', () => {
           .toBe(CART_TEST_DATA.variant2.colour);
       });
 
-      await test.step('Reset — empty the cart before the next test case', async () => {
-        await cart.goto();
-        const remaining = await cart.lineCount();
-        for (let i = remaining - 1; i >= 0; i--) {
-          await clickAndSettle(cart.removeLine(i));
-        }
-        await cart.goto();
-        expect(await cart.lineCount()).toBe(0);
-      });
-
-      let initialLineCount = 0;
-      let initialLineTotals: number[] = [];
-      let initialOrderTotal = 0;
-
-      /**
-       * NOT A PROCEDURE STEP. This is an automation-environment
-       * accommodation and carries no coverage: it asserts nothing, reads
-       * nothing and changes no state the procedure depends on.
-       *
-       * TP-04-005 is the heaviest FN-04 procedure (~25-30 navigations in
-       * ~78s). Two runs a day apart - 14 August 10:14 after a 16.3h rest,
-       * and 15 August 13:53 after a 27.6h rest - both reached the store's
-       * "Your connection needs to be verified" checkpoint at exactly this
-       * point, TC-04-010 #1, leaving that test case with no result on
-       * either occasion. Because the length of the rest BETWEEN runs made
-       * no difference, the trigger is request volume WITHIN a run, not a
-       * budget that drains overnight.
-       *
-       * The idle pause tests that reading: if the store's threshold is a
-       * rate (requests per window) the counter drains here and TC-04-010
-       * completes; if it is an absolute per-session count, the checkpoint
-       * still fires and the procedure has to be split or run manually.
-       *
-       * Set CHECKPOINT_COOLDOWN_MS=0 to disable.
-       */
-      const cooldownMs = Number(process.env.CHECKPOINT_COOLDOWN_MS ?? 90_000);
-      if (cooldownMs > 0) {
-        await test.step(`Environmental cooldown — idle ${cooldownMs / 1000}s before TC-04-010`, async () => {
-          await testInfo.attach('Environmental cooldown (not a procedure step)', {
-            body:
-              `idle for ${cooldownMs / 1000}s before TC-04-010 #1.\n` +
-              'Accommodates the store checkpoint that aborted this procedure at ' +
-              'this exact point on 14 and 15 August. No coverage, no assertions.',
-            contentType: 'text/plain',
-          });
-          await page.waitForTimeout(cooldownMs);
-        });
-      }
-
-      await test.step('TC-04-010 #1 — add Product A, record cart lines and order total', async () => {
-        await product.goto(CART_TEST_DATA.productAHandle);
-        const resp = page.waitForResponse((r) => r.url().includes('/cart/add'), { timeout: 10_000 }).catch(() => null);
-        await product.addToCartButton.click();
-        await resp;
-
-        await cart.goto();
-        initialLineCount = await cart.lineCount();
-        // TPS: "record the cart LINES and the order total"; TCS: "the order
-        // total equals the SUM OF THE LINE TOTALS" (SPR-12). Only the count
-        // and the total were recorded, so neither the lines nor the sum
-        // relation were available to #3 for comparison.
-        initialLineTotals = [];
-        for (let i = 0; i < initialLineCount; i++) {
-          initialLineTotals.push(parseMoney(await cart.lineTotal(i).textContent()));
-        }
-        initialOrderTotal = parseMoney(await cart.orderTotal.textContent());
-
-        await testInfo.attach('Initial cart lines / order total', {
-          body:
-            `line count: ${initialLineCount}\n` +
-            `line totals: ${initialLineTotals.join(', ')}\n` +
-            `order total: ${initialOrderTotal}`,
-          contentType: 'text/plain',
-        });
-
-        // TPS Set Up step 8 requires the order total to equal the sum of the
-        // line totals (SPR-12); the step recorded both but compared neither.
-        expect.soft(initialLineCount, 'TC-04-010 #1 expects the added line to be displayed.').toBeGreaterThan(0);
-        expect
-          .soft(initialOrderTotal, 'SPR-12: the order total should equal the sum of the line totals.')
-          .toBeCloseTo(
-            initialLineTotals.reduce((sum, value) => sum + value, 0),
-            2,
-          );
-      });
-
-      await test.step('TC-04-010 #2 — click Continue Shopping', async () => {
-        await cart.continueShoppingLink.click();
-        // Wait for the navigation to actually complete before reading the
-        // URL: page.url() does not wait, so without this the SPR-01 record
-        // can capture the cart page the click just left.
-        // Non-fatal: if Continue Shopping does not reach the catalogue, the
-        // soft assertion below records it as the finding and TC-04-010 #3
-        // still runs. Letting this throw would abort the procedure and leave
-        // #3 undischarged.
-        await page.waitForURL(`**${ROUTES.catalog}`, { timeout: 20_000 }).catch(() => null);
-        await settleForEvidence(page);
-        const destination = await recordUrl(page, testInfo, 'Continue Shopping');
-        expect.soft(destination).toContain(ROUTES.catalog);
-      });
-
-      await test.step('TC-04-010 #3 — reopen cart, compare with initial values', async () => {
-        await cart.goto();
-        const closingLineCount = await cart.lineCount();
-        const closingLineTotals: number[] = [];
-        for (let i = 0; i < closingLineCount; i++) {
-          closingLineTotals.push(parseMoney(await cart.lineTotal(i).textContent()));
-        }
-        const closingOrderTotal = parseMoney(await cart.orderTotal.textContent());
-
-        await testInfo.attach('Reopened cart lines / order total', {
-          body:
-            `line count: ${closingLineCount} (was ${initialLineCount})\n` +
-            `line totals: ${closingLineTotals.join(', ')} (were ${initialLineTotals.join(', ')})\n` +
-            `order total: ${closingOrderTotal} (was ${initialOrderTotal})`,
-          contentType: 'text/plain',
-        });
-
-        expect.soft(closingLineCount, 'TC-04-010 #3 expects the cart lines to be unchanged.').toBe(initialLineCount);
-        expect.soft(closingLineTotals, 'TC-04-010 #3 expects each line total to be unchanged.').toEqual(initialLineTotals);
-        expect
-          .soft(closingOrderTotal, 'TC-04-010 #3 expects the order total to be unchanged.')
-          .toBeCloseTo(initialOrderTotal, 2);
-      });
-
       await test.step('Wrap Up — empty the cart, return to the store home page', async () => {
+        // The six-step TPS ends at TC-04-009 #2, on the product detail page
+        // the cart line link opened — so come back to /cart before counting.
+        await cart.goto();
         const remaining = await cart.lineCount();
         for (let i = remaining - 1; i >= 0; i--) {
           await clickAndSettle(cart.removeLine(i));
         }
         await cart.goto();
-        // TPS Wrap Up: "Empty the cart and CONFIRM THAT IT HAS RETURNED to
-        // the empty-cart baseline." Both mid-procedure Resets confirm it;
-        // the Wrap Up did not, so a silent failure would hand the next
-        // procedure a dirty cart — and every FN-04 Set Up hard-asserts an
-        // empty one.
+        // The TPS step 4 wording — "Empty the cart and CONFIRM THAT IT HAS
+        // RETURNED to the empty-cart baseline" — applied to the mid-procedure
+        // Reset, which confirms it. The TD-04-V line added at step 5 is still
+        // in the cart when the six steps end, so it is cleared and confirmed
+        // here too: a silent failure would hand the next procedure a dirty
+        // cart, and every FN-04 Set Up hard-asserts an empty one.
         expect(await cart.lineCount(), 'Wrap Up expects the cart to return to the empty-cart baseline.').toBe(0);
         await header.gotoHome();
         await settleForEvidence(page);
