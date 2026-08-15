@@ -116,6 +116,29 @@ test.describe('FN-01 Product Browsing and Navigation', () => {
       const destination = await recordUrl(page, testInfo, 'Footer Sauce link');
       destinations.push(`Footer "Sauce" link [#3]: ${destination}`);
       expect.soft(destination).toContain('sauceapp.io');
+
+      // TCS expected result: "A valid, live destination is opened." Checking
+      // the URL alone is not enough to establish that — a parked or dead
+      // domain still answers, and still carries the expected hostname.
+      // Confirmed live (14 Aug): sauceapp.io responds HTTP 200 but serves a
+      // registrar domain-parking placeholder, which is what DEF-F1-06
+      // (footer "Sauce" link destination) describes. Soft, so #4 and the
+      // Wrap Up still run.
+      const destTitle = await page.title().catch(() => '');
+      const destBody = (await page.locator('body').innerText().catch(() => '')).slice(0, 800);
+      const parked =
+        /parked by the owner|domain name has been registered|buy this domain|domain for sale/i.test(destBody) ||
+        destTitle.trim().toLowerCase() === 'sauceapp.io';
+
+      await testInfo.attach('Footer "Sauce" link — destination page', {
+        body: `destination: ${destination}\npage title: ${destTitle}\ndomain-parking placeholder: ${parked}\n\nfirst 800 characters of the page:\n${destBody}`,
+        contentType: 'text/plain',
+      });
+
+      expect.soft(
+        parked,
+        `TC-01-004 #3: TCS expects a valid, live destination (DEF-F1-06) — ${destination} serves a domain-parking placeholder, page title "${destTitle}"`,
+      ).toBe(false);
       await header.gotoHome();
     });
 

@@ -82,16 +82,32 @@ test.describe('FN-01 Product Browsing and Navigation', () => {
         contentType: 'text/plain',
       });
       await expect(page).toHaveURL(new RegExp(ROUTES.blog));
+      // TCS expected result: "the blog or news content page is displayed at
+      // the expected URL, AND its page title matches the 'Blog' label of the
+      // control used". The title was previously attached but never compared,
+      // so a mismatch could not surface. DEF-F1-03 is logged against this
+      // step's destination, so a failure here is the evidence for it.
+      expect.soft(
+        blogPageTitle.toLowerCase(),
+        `TC-01-001 #4: the destination page title should match the "Blog" label of the control used — title read: "${blogPageTitle}"`,
+      ).toContain('blog');
     });
 
     await test.step('TC-01-001 #6 — Wish list control', async () => {
       // Wish list is, like Refer a friend, a mount point for the same
       // third-party Sauce widget (DEF-F6-03: "the Wishlist button opens
       // no wishlist page, and there is no way to add items to a
-      // wishlist" — an already-confirmed FN-06 defect). The new TPS
-      // wording is observational ("record whether... displayed"), so
-      // this records evidence rather than hard-asserting a specific
-      // outcome, matching how the Refer a friend step below is handled.
+      // wishlist" — an already-confirmed FN-06 defect, independently
+      // reproduced there by TP-06-004).
+      //
+      // The TPS words this step observationally ("record whether...
+      // displayed"), but the TCS states a definite expected result for it:
+      // "The Wish list page is displayed, listing saved items or showing an
+      // empty-wishlist state." Recording the observation without comparing
+      // it to that expected result meant the procedure passed while the
+      // store plainly did not meet it, so the assertion below closes that
+      // gap. Soft, so #7 and the Wrap Up still run and the full evidence
+      // set is captured.
       await header.gotoHome();
       const urlBefore = page.url();
       await sidebar.wishListLink.click();
@@ -113,6 +129,14 @@ test.describe('FN-01 Product Browsing and Navigation', () => {
         body: `overlay-like element visible: ${overlayVisible}`,
         contentType: 'text/plain',
       });
+      // A genuine navigation changes the path; a fragment-only change means
+      // nothing opened.
+      const wishListOpened = overlayVisible || new URL(urlAfter).pathname !== new URL(urlBefore).pathname;
+      expect.soft(
+        wishListOpened,
+        `TC-01-001 #6: TCS expects the Wish list page to be displayed, listing saved items or showing an empty-wishlist state (DEF-F6-03) — observed: ${wishListResponse.replace(/\n/g, '; ')}`,
+      ).toBe(true);
+
       await testInfo.attach('Wish list — screenshot', {
         body: await page.screenshot({ fullPage: true }),
         contentType: 'image/png',
@@ -168,6 +192,18 @@ test.describe('FN-01 Product Browsing and Navigation', () => {
           : 'Request to sgmnt.min.js was not observed within 15s of navigation.',
         contentType: 'text/plain',
       });
+      // TCS expected result: "A working referral mechanism is provided, for
+      // example a shareable link, and the link produced is valid and
+      // functional." The TPS wording is observational, but recording the
+      // observation without comparing it to that expected result let the
+      // procedure pass while no mechanism existed at all. DEF-F1-05 is
+      // logged against this control, so a failure here is its evidence.
+      // Soft, so the Wrap Up still runs.
+      expect.soft(
+        mechanismProduced && resolvesLive,
+        `TC-01-001 #7: TCS expects a working referral mechanism whose link is valid and functional (DEF-F1-05) — mechanism produced: ${mechanismProduced}, resolved to a live destination: ${resolvesLive}`,
+      ).toBe(true);
+
       await testInfo.attach('Refer a friend — shareable mechanism', {
         body: mechanismProduced
           ? `A referral/shareable mechanism was produced: ${mechanismHref ?? '(no href/value found)'}\nResolved to a live destination when used: ${resolvesLive}`
