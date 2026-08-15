@@ -9,28 +9,31 @@ import { recordUrl } from "../../utils/evidence";
  * TP-02-003 — Verify cart insertion is blocked with an inline validation
  * error when no size is selected. Covers TC-02-003 (#1 to #3).
  *
- * EXPECTED TO FAIL, BY DESIGN — marked via test.fail() below. This is not
- * a broken test: it checks the live site against what TC-02-003 says
- * should happen, and the site genuinely does not do that (see below).
- * test.fail() tells Playwright this test is known to fail, so CI stays
- * green while the underlying defect is unresolved, and only flips red if
- * the test unexpectedly PASSES — i.e. if the site's behaviour changes.
- * Do not remove test.fail() without confirming the underlying behaviour
- * has actually changed; removing it just to "fix" a red CI run defeats
- * the point.
+ * BLOCKED IN FULL — A-011. This is NOT a defect and is no longer marked
+ * test.fail(). This theme's inline script auto-selects the first Size and
+ * Colour option on page load
+ * (`$('.single-option-selector:eq(0)').val("S").trigger('change')`), so
+ * "no size selected" is not a reachable state on this store. That is
+ * standard platform behaviour preventing a condition from being
+ * established, which is an Assumption plus Blocked, never a defect.
+ * TCOV-02-003's condition cannot be established.
  *
- * CONFIRMED via diagnostic run: this theme's inline script auto-selects
- * the first Size and Colour option on page load
- * (`$('.single-option-selector:eq(0)').val("S").trigger('change')`), and
- * clicking Add to Cart untouched genuinely succeeds — no inline error,
- * no block. "No size selected" is not a reachable state on this store.
- * That contradicts TC-02-003's expected outcome, so per the TDS's own
- * methodology ("a coverage item that exposes a known defect is recorded
- * as a failure, not silently passed"), this asserts the expected
- * behaviour and is allowed to fail rather than treating the mismatch as
- * ambiguous evidence. Cleanup (removing any line added at Step 4) runs
- * before that assertion so the cart is restored to baseline regardless
- * of whether the assertion passes.
+ * WHAT THIS PROCEDURE ASSERTS. The block is recorded as evidence AND
+ * monitored. The step below asserts that the Size dropdown carries a
+ * value on page load — the environment fact that makes the block real. If
+ * the store ever loads with no size preselected, that goes red and flags
+ * A-011 as stale and TC-02-003 as newly executable. It asserts nothing
+ * about REQ-F2-02.
+ *
+ * What is NOT asserted is the requirement: that Add to Cart is refused
+ * with an inline validation error. Asserting it against an unreachable
+ * condition would report a failure for a case that was never executable,
+ * which is exactly what the old test.fail() assertion did.
+ *
+ * The procedure is still executed in full — Add to Cart is clicked and
+ * the system response recorded as evidence — and nothing is deleted.
+ * Cleanup (removing any line the click added) still runs so the cart is
+ * restored to the ENV-08 baseline for the next procedure.
  *
  * Uses CartPage (a real navigation), not CartDrawer, for both counts.
  * CartDrawer's #drawer is a server-rendered snapshot from page load and
@@ -40,19 +43,22 @@ import { recordUrl } from "../../utils/evidence";
  * pass on exactly the behaviour this test exists to catch.
  */
 test.describe("FN-02 Product Detail", () => {
-    test("TP-02-003 missing size selection validation", async ({
+    test("TP-02-003 [BLOCKED A-011] Missing size selection validation", async ({
         page,
     }, testInfo) => {
-        test.fail(
-            true,
-            "Confirmed defect: Size/Colour auto-select on load, so Add to Cart is never blocked.",
-        );
+        testInfo.annotations.push({
+            type: "blocked",
+            description:
+                "A-011: the Size and Colour dropdowns are auto-preselected on page load, so the " +
+                '"no size selected" state is unreachable. TCOV-02-003 condition cannot be established.',
+        });
 
         const header = new HeaderBar(page);
         const product = new ProductPage(page);
         const cart = new CartPage(page);
 
         let baselineLineCount = 0;
+        let sizeOnLoad = "";
 
         await test.step("Set Up — confirm empty cart, baseline line count", async () => {
             await cart.goto();
@@ -77,12 +83,13 @@ test.describe("FN-02 Product Detail", () => {
             // TPS #1 asks for three readings on load, not one: the Size dropdown
             // value, whether Add to Cart is enabled, and whether a Sold Out badge
             // is shown. Taken without operating any variant control.
-            const [sizeOnLoad, addToCartEnabled, soldOutBadgeCount] =
+            const [sizeValue, addToCartEnabled, soldOutBadgeCount] =
                 await Promise.all([
                     product.sizeSelect.inputValue(),
                     product.addToCartButton.isEnabled(),
                     page.locator(".sold-out").count(),
                 ]);
+            sizeOnLoad = sizeValue;
 
             await testInfo.attach("Variant controls state on page load", {
                 body:
@@ -91,6 +98,31 @@ test.describe("FN-02 Product Detail", () => {
                     `Sold Out badge present: ${soldOutBadgeCount > 0}`,
                 contentType: "text/plain",
             });
+        });
+
+        await test.step("A-011 block condition — Size is preselected on load (TCOV-02-003 unreachable)", async () => {
+            // Not a TC-02-003 step. This is the environment check that makes
+            // the block demonstrable rather than assumed, and keeps it
+            // monitored: A-004 lets store content and theme change without
+            // notice, and we run against live production.
+            await testInfo.attach("A-011 — Size dropdown value on page load", {
+                body:
+                    `Size dropdown on load: ${sizeOnLoad === "" ? "(no selection)" : sizeOnLoad}\n` +
+                    `"no size selected" state reachable: ${sizeOnLoad === "" ? "yes" : "no"}\n` +
+                    `TCOV-02-003 condition establishable: ${sizeOnLoad === "" ? "yes" : "no"}`,
+                contentType: "text/plain",
+            });
+
+            // Asserts the ENVIRONMENT, not the requirement. Going red here
+            // means the store now loads with no size preselected: A-011 is
+            // stale and TC-02-003 must be re-planned as executable. This
+            // does NOT assert REQ-F2-02 either way.
+            expect(
+                sizeOnLoad,
+                "A-011 expects the Size dropdown to be auto-preselected on load, which is why " +
+                    "TC-02-003 is Blocked. If this fails the store no longer preselects a size: " +
+                    "A-011 is stale and TC-02-003 must be re-planned as executable.",
+            ).not.toBe("");
         });
 
         await test.step("TC-02-003 #2 — click Add to Cart without touching Size", async () => {
@@ -130,18 +162,28 @@ test.describe("FN-02 Product Detail", () => {
                 contentType: "text/plain",
             });
 
-            // Restore baseline state before asserting, so cleanup happens
-            // regardless of whether the assertion below passes or fails.
+            // The line count is RECORDED, not asserted. TC-02-003's expected
+            // result — the insertion refused with an inline validation error —
+            // cannot be evaluated, because the condition it depends on ("no
+            // size selected") is unreachable under A-011. Asserting it here
+            // would report a failure for a case that was never executable.
+            // The requirement itself stays stated in the TCS, unchanged.
+
+            // Cleanup still runs: ENV-08 requires the next procedure to start
+            // from an empty cart, so any line the click added is removed.
             for (let i = closingLineCount - 1; i >= baselineLineCount; i--) {
                 await cart.removeLine(i).click();
             }
 
-            // This assertion is expected to fail — see the file-level comment.
+            await cart.goto();
+            const afterCleanup = await cart.lineCount();
+            await testInfo.attach("Cart restored to ENV-08 baseline", {
+                body: `line count after cleanup: ${afterCleanup} (baseline ${baselineLineCount})`,
+                contentType: "text/plain",
+            });
             expect(
-                closingLineCount,
-                "TC-02-003 expects Add to Cart to be blocked when no size is explicitly selected. " +
-                    'Confirmed: this theme auto-selects Size="S"/Colour="Blue" on page load, so the ' +
-                    "click succeeds and a line is added instead.",
+                afterCleanup,
+                "Cleanup must restore the ENV-08 baseline so the next procedure starts from an empty cart.",
             ).toBe(baselineLineCount);
         });
 

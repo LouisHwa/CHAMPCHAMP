@@ -9,42 +9,53 @@ import { recordUrl } from '../../utils/evidence';
  * TP-02-002 — Verify the gallery image updates when a different colour
  * variant is selected. Covers TC-02-002 (#1 to #4).
  *
- * EXPECTED TO FAIL — DEF-F2-01. The gallery image does not update when
- * the colour variant changes: this store serves the same file for every
- * colour of TD-02-B. Confirmed from 18 recorded src values across 9 runs
- * between 6 and 9 August, every one of them
- * //sauce-demo.myshopify.com/cdn/shop/products/jacket.jpg?v=1394657254
- * for both TD-02-F (Blue) and TD-02-G (Red).
+ * BLOCKED IN FULL — A-013. DEF-F2-01 has been WITHDRAWN. The gallery
+ * image never changes on a colour change, but not because the store is
+ * faulty: no product in the catalogue carries a distinct gallery image
+ * per colour variant. Every product holds a single image, so there is no
+ * variant image for the gallery to change to and REQ-F2-03 was never
+ * placed under test. That is store content configuration, not a fault,
+ * and ENV-07 (as strengthened) is not satisfiable. TCOV-02-002's
+ * condition cannot be established.
  *
- * The failure IS the finding. Per the TDS methodology — "a coverage item
- * that exposes a known defect is recorded as a failure, not silently
- * passed" — this procedure reports FAILED rather than being marked
- * test.fail(). test.fail() makes Playwright print "passed" for a test
- * whose assertion failed, which would misstate the result in a
- * verification report and, because Playwright then does not consider the
- * test failed, also suppresses the screenshot/trace/video that
- * retain-on-failure would otherwise keep. The defect is identified by the
- * annotation below so a reader can tell this apart from a regression.
+ * WHAT THIS PROCEDURE ASSERTS, AND WHY IT IS NOT NOTHING. The block is
+ * recorded as evidence AND monitored. The step below sweeps every colour
+ * option and asserts the product exposes exactly ONE distinct gallery
+ * image source. That asserts the ENVIRONMENT is still as A-013 describes
+ * — it does not assert anything about REQ-F2-03. A-004 permits store
+ * content to change without notice and we run against live production,
+ * so if per-variant images are ever configured this goes red and flags
+ * A-013 as stale and TC-02-002 as newly executable. A skipped test could
+ * never do that, which is why this reports green rather than skipped.
  *
- * SPR-07 asks for the image to be captured before and after the change
- * "so the comparison is evidenced rather than asserted". Both screenshots
- * and both raw srcs are still attached, and the comparison verdict is
- * attached alongside them — previously the two srcs went into separate
- * attachments with nothing comparing them, so the defect sat unreported
- * in the evidence for three days while the test showed green.
+ * Two things must NEVER be asserted here:
+ *   - that the image DOES change — it would fail for the wrong reason,
+ *     reporting a defect where the requirement was never under test;
+ *   - that the image does NOT change, as TC-02-002's expected result —
+ *     that encodes observed behaviour as the oracle, which principle 1
+ *     forbids. Expected results derive from the requirement, never from
+ *     the site.
+ *
+ * The procedure is executed in full and nothing is deleted: SPR-07's
+ * before/after screenshots and both raw srcs are still captured, and the
+ * comparison is attached as an ENV-07 observation rather than a verdict
+ * on the store.
+ *
+ * Preconditions stay hard-asserted — empty cart (ENV-08), Size = S, Add
+ * to Cart enabled, no Sold Out badge, unchanged closing line count. Those
+ * are preconditions and side effects, not the blocked condition.
  */
 test.describe('FN-02 Product Detail', () => {
-  test('TP-02-002 colour variant gallery image update', async ({ page }, testInfo) => {
+  test('TP-02-002 [BLOCKED A-013] Gallery image update on colour selection', async ({ page }, testInfo) => {
     const header = new HeaderBar(page);
     const product = new ProductPage(page);
     const cart = new CartDrawer(page);
 
     testInfo.annotations.push({
-      type: 'known defect',
+      type: 'blocked',
       description:
-        'DEF-F2-01 — the gallery image does not update when the colour variant changes. ' +
-        'This procedure is expected to FAIL against the current store; the failure is the ' +
-        'recorded finding, not a broken test. If it starts passing, the store has changed.',
+        'A-013: no colour variant carries an associated gallery image. ENV-07 not satisfiable. ' +
+        'TCOV-02-002 condition cannot be established.',
     });
 
     let baselineLineCount = 0;
@@ -127,29 +138,64 @@ test.describe('FN-02 Product Detail', () => {
       });
 
       // TPS Set Up #5 captures this image "for comparison with the image
-      // captured at Step 4". That comparison is made here rather than left
-      // to whoever reads the report: with the two srcs in separate
-      // attachments and nothing comparing them, it went unmade across all
-      // 9 recorded runs.
-      const changed = redSrc !== blueSrc;
+      // captured at Step 4". The comparison is recorded here as an
+      // observation, NOT as a verdict on the store — under A-013 the
+      // requirement was never placed under test, so neither outcome of
+      // this comparison can pass or fail TC-02-002.
       await testInfo.attach('Gallery image comparison (TC-02-002 #3)', {
         body:
           `Blue (TD-02-F): ${blueSrc}\n` +
           `Red  (TD-02-G): ${redSrc}\n` +
-          `gallery image changed: ${changed ? 'yes' : 'no'}\n`,
+          `image source differs between the two colours: ${redSrc !== blueSrc ? 'yes' : 'no'}\n` +
+          `\nRecorded as evidence only. See the A-013 block condition step below ` +
+          `for the assertion that keeps this block honest.`,
+        contentType: 'text/plain',
+      });
+    });
+
+    await test.step('A-013 block condition — one gallery image across all colour options (ENV-07)', async () => {
+      // Not a TC-02-002 step. This is the environment check that makes the
+      // block demonstrable rather than assumed, and keeps it monitored.
+      //
+      // Sweeping EVERY colour option is deliberate: A-013's claim is that
+      // no colour carries its own image, which a Blue-vs-Red comparison
+      // only samples. Reading the source for each option and counting the
+      // distinct set tests the claim as stated.
+      const colourValues = await product.colourSelect
+        .locator('option')
+        .evaluateAll((options) =>
+          options.map((o) => (o as HTMLOptionElement).value).filter((v) => v !== ''),
+        );
+
+      const sourceByColour: Record<string, string> = {};
+      for (const colour of colourValues) {
+        await product.selectColour(colour);
+        sourceByColour[colour] = (await product.galleryImage.getAttribute('src')) ?? '(no src attribute)';
+      }
+      const distinctSources = new Set(Object.values(sourceByColour));
+
+      await testInfo.attach('A-013 — gallery image source per colour option', {
+        body:
+          Object.entries(sourceByColour)
+            .map(([colour, src]) => `${colour}: ${src}`)
+            .join('\n') +
+          `\n\ncolour options offered: ${colourValues.length}\n` +
+          `distinct gallery image sources: ${distinctSources.size}\n` +
+          `ENV-07 (each colour carries its own gallery image): ${distinctSources.size > 1 ? 'satisfied' : 'NOT satisfiable'}`,
         contentType: 'text/plain',
       });
 
-      // Soft, so TC-02-002 #4's cart-line-count evidence is still collected
-      // and the Wrap Up still runs. The test still reports FAILED overall.
-      expect
-        .soft(
-          redSrc,
-          'TC-02-002 expects the gallery image to update when the colour variant changes. ' +
-            'DEF-F2-01: the same image is served for every colour of TD-02-B, so it never ' +
-            'updates.',
-        )
-        .not.toBe(blueSrc);
+      // Asserts the ENVIRONMENT, not the requirement. Going red here means
+      // per-variant images now exist, so A-013 is stale and TC-02-002 has
+      // become executable — exactly the change we need to be told about,
+      // since A-004 lets store content change without notice.
+      expect(
+        distinctSources.size,
+        'A-013 expects TD-02-B to expose a single gallery image across every colour option, ' +
+          'which is why TC-02-002 is Blocked. If this fails the store now carries per-variant ' +
+          'images: A-013 is stale, ENV-07 is satisfiable and TC-02-002 must be re-planned as ' +
+          'executable. This does NOT assert REQ-F2-03 either way.',
+      ).toBe(1);
     });
 
     await test.step('TC-02-002 #4 — cart line count unchanged', async () => {
