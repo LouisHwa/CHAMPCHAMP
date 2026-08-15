@@ -1,5 +1,6 @@
 import { test, expect } from '../../utils/pacedTest';
 import { CartPage } from '../../pages/CartPage';
+import { HeaderBar } from '../../pages/HeaderBar';
 import { ConfirmationPage } from '../../pages/ConfirmationPage';
 import {
   addProductAndGoToCheckout,
@@ -32,9 +33,65 @@ test.describe('FN-05 Checkout', () => {
   test('TP-05-004 payment outcome', async ({ page }, testInfo) => {
     test.setTimeout(120_000);
 
+    await test.step('Set Up — confirm no shopper signed in and an empty cart baseline (ENV-08)', async () => {
+      // The TPS opens this procedure with four confirmations and the code
+      // had none, going straight to TC-05-014 #1. The empty-cart baseline
+      // matters most: without it the run inherits whatever the cart already
+      // holds, and the order completed at TC-05-007 #3 could contain more
+      // than TD-05-A while the confirmation-page summary check still passed.
+      const header = new HeaderBar(page);
+      await header.gotoHome();
+      const signedOut = await header.logInLink.isVisible().catch(() => false);
+
+      const cart = new CartPage(page);
+      await cart.goto();
+      const remaining = await cart.lineCount();
+      for (let i = remaining - 1; i >= 0; i--) await cart.removeLine(i).click();
+      await cart.goto();
+      const lines = await cart.lineCount();
+
+      await testInfo.attach('Set Up — preconditions', {
+        body: `"Log In" control visible (i.e. no shopper signed in): ${signedOut}\ncart lines at baseline: ${lines}`,
+        contentType: 'text/plain',
+      });
+      expect(signedOut, 'no shopper account should be signed in at Set Up').toBe(true);
+      expect(lines, 'ENV-08: the cart should be empty at Set Up').toBe(0);
+    });
+
     const { checkout } = await addProductAndGoToCheckout(page);
     const confirmation = new ConfirmationPage(page);
+
+    // TD-05-E, filled the moment the checkout opens, before the delivery
+    // address or anything else. Contact is the first section of the page and
+    // a guest order cannot be submitted without it — leaving it empty means
+    // a "Pay now" that does not complete could be the missing contact address
+    // rather than the declined card, which would make TC-05-014 #2's result
+    // unattributable. SPR-18 also needs the contact address recorded.
+    const guestEmail = GUEST_CONTACT.email();
+    await checkout.emailField.fill(guestEmail);
+
     await fillDeliveryAddress(page, checkout, 'United Kingdom');
+
+    await test.step('Set Up — confirm the checkout testing panel is present (ENV-11) and TD-05-UK applied (ENV-12)', async () => {
+      // ENV-11 is the payment simulation panel; ENV-12 is the delivery
+      // destinations. Without the panel present, the simulation values the
+      // whole procedure depends on are not published, so "declined" and
+      // "approved" would mean nothing.
+      const panelVisible = await checkout.testPaymentGatewayButton
+        .or(page.getByText('Testing instruction'))
+        .first()
+        .isVisible()
+        .catch(() => false);
+      const shippingShown = await checkout.costSummaryRow('Shipping').first().textContent().catch(() => null);
+
+      await testInfo.attach('Set Up — checkout testing panel and delivery destination', {
+        body:
+          `ENV-11 testing panel present in the Payment section: ${panelVisible}\n` +
+          `ENV-12 TD-05-UK applied, shipping cost shown: ${shippingShown ?? '(not read)'}`,
+        contentType: 'text/plain',
+      });
+      expect(panelVisible, 'ENV-11: the checkout testing panel should be present in the Payment section').toBe(true);
+    });
 
     await test.step('TC-05-014 #1 — Payment section displays card number, expiry, CVV, name fields', async () => {
       await expect(checkout.cardField('Card number')).toBeVisible();
@@ -88,10 +145,7 @@ test.describe('FN-05 Checkout', () => {
     });
 
     const tc007 = await addProductAndGoToCheckout(page);
-    // TD-05-E. The contact address is required to complete a guest order at
-    // all, and SPR-18 requires it recorded alongside the confirmation
-    // number so orders raised by testing can be identified afterwards.
-    const guestEmail = GUEST_CONTACT.email();
+    // Same as the first checkout: contact address first, then the rest.
     await tc007.checkout.emailField.fill(guestEmail);
     await fillDeliveryAddress(page, tc007.checkout, 'United Kingdom');
 

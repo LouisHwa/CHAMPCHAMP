@@ -195,8 +195,22 @@ export async function fillDeliveryAddress(
   await checkout.deliveryField('City').fill(address.city);
   await checkout.deliveryField('Postcode').fill(address.postcode);
   await page.getByRole('heading', { name: 'Payment' }).click({ timeout: 3000 }).catch(() => {});
-  await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
-  await page.waitForTimeout(1000);
+
+  // This used to be waitForLoadState('networkidle', 15s). The checkout is a
+  // React app with analytics beacons, PCI card iframes and shipping-rate
+  // polling, so it never goes network-quiet for the required 500ms — the
+  // wait ran its full 15 seconds every time, timed out, and the .catch()
+  // swallowed it silently. That was ~15s per call spent waiting for a
+  // condition that cannot occur (twice per TP-05-004 run).
+  //
+  // What the step actually needs is the recalculated shipping rate, so wait
+  // for that instead: it settles in a second or two. Still caught, so
+  // behaviour is unchanged where a rate legitimately never appears (e.g.
+  // procedures that only need the address entered).
+  await expect(checkout.costSummaryRow('Shipping').first())
+    .toContainText(/£\d/, { timeout: 15_000 })
+    .catch(() => {});
+  await page.waitForTimeout(500);
 }
 
 /**
