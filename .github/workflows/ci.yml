@@ -90,7 +90,11 @@ jobs:
   smoke:
     name: Smoke — pass / blocked / fail (read-only)
     needs: quality-gate
-    if: github.event_name == 'pull_request'
+    # Runs at the merge gate (pull request) AND after a merge lands on main.
+    # The main run is what produces the published report; see the publish job.
+    if: >-
+      github.event_name == 'pull_request' ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -105,20 +109,12 @@ jobs:
       group: sdss-live-store
       cancel-in-progress: false
 
-    # Scoped to this job only. Note what is NOT here: contents: write. The old
-    # Allure workflow needed that to push a full report copy into the gh-pages
-    # branch on every run, which is what grew the repository to 268 MB. Pages
-    # deployment uploads an artefact directly, so this pipeline still cannot
-    # write to the repository at all.
-    permissions:
-      contents: read
-      pages: write
-      id-token: write
-
-    environment:
-      name: github-pages
-      url: ${{ steps.pages-deploy.outputs.page_url }}
-
+    # No `environment:` here, deliberately. GitHub evaluates environment
+    # protection rules when a job is QUEUED, not when its deploy step runs, so
+    # declaring github-pages on this job caused the whole job — tests included —
+    # to be rejected on pull requests. Pages deployment lives in the publish
+    # job below instead, where a protection rule can never stop the suite from
+    # running.
     steps:
       - uses: actions/checkout@v4
 
@@ -167,32 +163,6 @@ jobs:
       - name: Compare against the recorded findings
         run: node scripts/check-expected-results.mjs ci-results.json --scope smoke
 
-      # Publish the smoke report to GitHub Pages.
-      #
-      # ONLY the smoke report is published, and that is a deliberate policy.
-      # These three procedures are read-only — no cart, no checkout, no login,
-      # no credentials — so nothing sensitive can appear in their evidence.
-      # Manual runs of FN-05/06/07 stay download-only artefacts, because that
-      # evidence carries account emails, reset links and live checkout URLs,
-      # which SPR-24 forbids in a published artefact.
-      #
-      # if: always() so a red verdict still publishes. A report you can only
-      # read when everything passed is not much use.
-      - name: Setup Pages
-        if: always()
-        uses: actions/configure-pages@v5
-
-      - name: Package the report for Pages
-        if: always()
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: playwright-report/
-
-      - name: Deploy report to Pages
-        id: pages-deploy
-        if: always()
-        uses: actions/deploy-pages@v4
-
       - name: Upload HTML report
         if: always()
         uses: actions/upload-artifact@v4
@@ -213,3 +183,64 @@ jobs:
             test-results/
             ci-results.json
           retention-days: 14
+
+  # Publishes the smoke report to GitHub Pages, from main only.
+  #
+  # WHY A SEPARATE JOB, AND WHY MAIN ONLY. A pull request does not run as its
+  # branch: it runs as refs/pull/N/merge, a temporary merge ref. The
+  # github-pages environment restricts deployment by BRANCH, and a pull ref is
+  # not a branch, so no deployment branch rule can ever match it — adding the
+  # feature branch to the allowed list does not help. Publishing therefore
+  # happens after the merge, from main.
+  #
+  # That is also the better outcome: the public URL always reflects merged,
+  # reviewed state rather than whichever pull request happened to run last.
+  #
+  # if: always() so a red verdict still publishes — a report you can only read
+  # when everything passed is not much use, and the expected failure
+  # (DEF-F3-01) is precisely what the Test Log cites.
+  #
+  # ONLY the smoke report is published, deliberately. Those three procedures
+  # are read-only, so nothing sensitive can appear in their evidence. Manual
+  # runs of FN-05/06/07 stay download-only artefacts: that evidence carries
+  # account emails, reset links and live checkout URLs, which SPR-24 forbids in
+  # a published artefact.
+  publish:
+    name: Publish report to Pages (main only)
+    needs: smoke
+    if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    # Scoped to this job. Note what is NOT here: contents: write. The old
+    # Allure workflow needed that to push a full report copy into the gh-pages
+    # branch every run, which is what grew the repository to 268 MB across
+    # 10,061 files. Pages deployment uploads an artefact instead, so this
+    # pipeline cannot write to the repository at all.
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+
+    environment:
+      name: github-pages
+      url: ${{ steps.pages-deploy.outputs.page_url }}
+
+    steps:
+      - name: Download the report built by the smoke job
+        uses: actions/download-artifact@v4
+        with:
+          name: smoke-report
+          path: playwright-report
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Package the report
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: playwright-report/
+
+      - name: Deploy to Pages
+        id: pages-deploy
+        uses: actions/deploy-pages@v4
