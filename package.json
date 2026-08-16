@@ -22,8 +22,6 @@
     "@playwright/test": "^1.49.0",
     "@types/mailparser": "^3.4.6",
     "@types/node": "^22.10.0",
-    "allure-commandline": "^2.43.0",
-    "allure-playwright": "^3.10.2",
     "dotenv": "^17.4.2",
     "imapflow": "^1.6.5",
     "mailparser": "^3.9.14",

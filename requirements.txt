@@ -2,8 +2,6 @@
 # Install these dependencies with npm ci (from package.json), not pip.
 @playwright/test
 @types/node
-allure-commandline
-allure-playwright
 typescript
 
 # npm ci

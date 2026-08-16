@@ -14,7 +14,12 @@ import { defineConfig, devices } from "@playwright/test";
  * Secrets instead; dotenv silently no-ops if .env doesn't exist, so
  * this is safe either way.
  */
-// run this first 'npm install --save-dev allure-playwright'
+// Reporting: the Playwright HTML report is the primary artefact and is
+// published to GitHub Pages by .github/workflows/ci.yml. Allure was retired on
+// 16 August — it discarded Playwright's annotations, so blocked procedures
+// (A-011, A-013) could not be shown without adding Allure-specific calls to
+// every spec, and republishing its full report per run is what grew the
+// repository to 268 MB.
 
 const isCI = !!process.env.CI;
 
@@ -79,7 +84,6 @@ export default defineConfig({
         ["list"],
         ["html", { outputFolder: "playwright-report", open: "never" }],
         ["junit", { outputFile: "test-results/junit.xml" }],
-        ["allure-playwright", { outputFolder: "allure-results" }],
     ],
 
     use: {
