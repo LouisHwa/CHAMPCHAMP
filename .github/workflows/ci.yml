@@ -196,9 +196,13 @@ jobs:
   # That is also the better outcome: the public URL always reflects merged,
   # reviewed state rather than whichever pull request happened to run last.
   #
-  # if: always() so a red verdict still publishes — a report you can only read
-  # when everything passed is not much use, and the expected failure
-  # (DEF-F3-01) is precisely what the Test Log cites.
+  # Publishes on a red verdict as well as a green one — a report you can only
+  # read when everything passed is not much use, and the expected failure
+  # (DEF-F3-01) is precisely what the Test Log cites. But it does NOT run when
+  # the smoke job was skipped or cancelled: there would be no report artefact
+  # to download, so the job would fail for a reason that has nothing to do with
+  # the store. Checking the result explicitly rather than using always() keeps
+  # a red publish job meaningful.
   #
   # ONLY the smoke report is published, deliberately. Those three procedures
   # are read-only, so nothing sensitive can appear in their evidence. Manual
@@ -208,7 +212,9 @@ jobs:
   publish:
     name: Publish report to Pages (main only)
     needs: smoke
-    if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: >-
+      (needs.smoke.result == 'success' || needs.smoke.result == 'failure') &&
+      github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
