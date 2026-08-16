@@ -26,10 +26,10 @@
     "Update the Defect Log and this file together — never this file alone."
   ],
 
-  "TP-01-001": {
+  "TP-01-003": {
     "expect": "pass",
     "scope": ["smoke"],
-    "note": "Global navigation. Read-only; a clean genuine pass."
+    "note": "Blog browsing. Read-only, and the only FN-01 procedure with no defect asserted against it: TP-01-001 carries DEF-F1-03/05, TP-01-002 carries DEF-F1-01/02, TP-01-004 carries DEF-F1-06."
   },
 
   "TP-02-002": {

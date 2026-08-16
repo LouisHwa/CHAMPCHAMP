@@ -21,9 +21,25 @@
  * Exit 0 when the run agrees with the baseline, 1 otherwise.
  */
 
-import { readFileSync } from 'node:fs';
+import { readFileSync, appendFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+
+/**
+ * Writes the verdict to GitHub's job summary, so the result is readable on the
+ * run page itself. Without this the only way to see which procedure diverged
+ * is to download and unzip the report artefact, which nobody does for a
+ * routine check. No-ops outside CI.
+ */
+function summary(markdown) {
+  const file = process.env.GITHUB_STEP_SUMMARY;
+  if (!file) return;
+  try {
+    appendFileSync(file, markdown + '\n');
+  } catch {
+    /* the summary is a convenience; never fail a run over it */
+  }
+}
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const MANIFEST_PATH = resolve(HERE, '..', 'ci', 'expected-results.json');
@@ -39,6 +55,7 @@ const lines = [];
 function fatal(message, detail) {
   console.error(`\nFAIL  ${message}`);
   if (detail) console.error(`      ${detail}`);
+  summary(`## Expected-results check\n\n**FAILED — ${message}**\n\n${detail ?? ''}`);
   process.exit(1);
 }
 
@@ -221,6 +238,28 @@ for (const [id, entry] of declared) {
 }
 
 console.log(lines.join('\n'));
+
+/* Same table, rendered on the GitHub run page so no download is needed. */
+const summaryRows = declared
+  .filter(([id]) => actualByTp.has(id))
+  .map(([id, entry]) => {
+    const actual = actualByTp.get(id);
+    const failed = problems.some((p) => p.id === id);
+    const tag = actual.annotations.includes('blocked') ? ' `blocked`' : '';
+    const ref = entry.defect ?? entry.assumption ?? '';
+    return `| ${failed ? '❌' : '✅'} | ${id} | ${entry.expect} | ${actual.status}${tag} | ${ref} |`;
+  });
+
+summary(
+  `## Expected-results check\n\n` +
+    `${problems.length === 0 ? '**Run agrees with the recorded findings.**' : `**${problems.length} divergence(s) from the baseline.**`}\n\n` +
+    `| | Procedure | Expected | Actual | Ref |\n|---|---|---|---|---|\n${summaryRows.join('\n')}\n\n` +
+    (problems.length === 0
+      ? '_A failing procedure here is the recorded finding, not a broken build._'
+      : problems
+          .map((p) => `**${p.id}** — ${p.message}\n\n> ${p.hint ?? ''}`)
+          .join('\n\n')),
+);
 
 if (problems.length > 0) {
   console.error('');

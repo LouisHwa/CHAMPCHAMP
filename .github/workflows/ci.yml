@@ -121,10 +121,15 @@ jobs:
 
       # Three procedures, one per functional area, covering all three result
       # shapes so the comparator itself is exercised on every PR:
-      #   TP-01-001  pass     global navigation
+      #   TP-01-003  pass     blog browsing
       #   TP-02-002  blocked  A-013, no per-colour gallery image
       #   TP-03-004  fail     DEF-F3-01, header/footer Search controls
       # All three are read-only: no cart, no checkout, no order.
+      #
+      # TP-01-003 is the pass case because it is the only FN-01 procedure with
+      # no defect asserted against it — TP-01-001 carries DEF-F1-03/05,
+      # TP-01-002 carries DEF-F1-01/02 and TP-01-004 carries DEF-F1-06, so all
+      # three of those are expected failures and cannot serve as the pass slot.
       #
       # continue-on-error because TP-03-004 is EXPECTED to fail. The comparator
       # in the next step is what decides red or green.
@@ -135,7 +140,7 @@ jobs:
           PLAYWRIGHT_JSON_OUTPUT_NAME: ci-results.json
         run: |
           npx playwright test \
-            tests/fn01-browsing/tp-01-001-global-navigation.spec.ts \
+            tests/fn01-browsing/tp-01-003-blog-browsing.spec.ts \
             tests/fn02-product-detail/tp-02-002-colour-variant-gallery-image.spec.ts \
             tests/fn03-search/tp-03-004-header-and-footer-search-control.spec.ts \
             --project=chromium \
