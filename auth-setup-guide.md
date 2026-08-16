@@ -192,11 +192,12 @@ eliminated it.
 
 ## Traffic
 
-Assumption A-005 forbids abnormal traffic against the live store. Cloudflare
-already served an interstitial during a signed-out FN-04 batch on 7 August.
-Keep `workers: 2`, run in small batches, and treat any result taken while a
-challenge is active as **invalid** rather than as a test failure — check the
-trace for "Your connection needs to be verified" before believing a failure.
+Constraint A-009 requires automated execution against the live store to be
+paced and run serially in small batches. Cloudflare already served an
+interstitial during a signed-out FN-04 batch on 7 August. Keep `workers: 1`,
+run in small batches, and treat any result taken while a challenge is active
+as **invalid** rather than as a test failure — check the trace for "Your
+connection needs to be verified" before believing a failure.
 
 ## Never
 

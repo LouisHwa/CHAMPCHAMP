@@ -30,8 +30,11 @@ at a row in the Test Case Specification.
 
 ## Traffic discipline
 
-Assumption A-005 in the test basis forbids abnormal traffic against the
-live store. This site runs on Shopify behind Cloudflare, and Cloudflare
+Constraint A-009 in the test basis records that live-production execution
+constrains automated test volume, and requires automated execution to be
+paced and run serially in small batches. Assumption A-005 separately
+forbids bypassing or auto-solving the challenge when it does appear.
+This site runs on Shopify behind Cloudflare, and Cloudflare
 served a "Verify you are human" interstitial mid-run on 7 August — our
 lecturer confirmed this is the site's own bot-protection reacting to
 automated request patterns, not a defect in the tests, and that any team

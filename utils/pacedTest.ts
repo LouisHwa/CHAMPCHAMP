@@ -25,7 +25,7 @@ import { test as base, expect } from '@playwright/test';
  * What this does and does not mitigate:
  *   - Cloudflare / rate-based detection: yes. Request volume and rate
  *     from one IP is what tripped the interstitial on 7 August, and
- *     A-005 requires the gap regardless.
+ *     A-009 requires automated execution to be paced regardless.
  *   - The hCaptcha on the login and registration forms: no. That is
  *     scored per submission on the browser's fingerprint and behaviour
  *     at that moment, and is indifferent to what happened seconds

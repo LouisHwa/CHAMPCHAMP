@@ -67,10 +67,11 @@ export default defineConfig({
         ...(isCI ? ["**/fn05-checkout/**"] : []),
     ],
 
-    // A-005: no abnormal traffic against the production storefront.
-    // Running in parallel is what actually trips Cloudflare fastest
-    // (confirmed 7 August), so this is 1 everywhere, CI included — never
-    // raise it for "speed".
+    // A-009: live-production execution constrains automated test volume.
+    // The constraint requires automated execution to be paced and "run
+    // serially in small batches". Running in parallel is also what actually
+    // trips Cloudflare fastest (confirmed 7 August), so this is 1
+    // everywhere, CI included — never raise it for "speed".
     workers: 1,
     fullyParallel: false,
 
