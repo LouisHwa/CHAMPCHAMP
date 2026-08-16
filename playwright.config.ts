@@ -40,7 +40,17 @@ export default defineConfig({
     // command line, so it is env-gated rather than absolute:
     //   PowerShell   $env:INFRA=1; npx playwright test tests/_infra/...
     //   bash         INFRA=1 npx playwright test tests/_infra/...
-    testIgnore: process.env.INFRA ? [] : "**/_infra/**",
+    // FN-05 completes four real orders on the live storefront (one in
+    // TP-05-004, two in TP-05-005, one in TP-05-006). SPR-18 allows no more
+    // orders than the test cases require, so it must never run unattended on
+    // a runner. tests/fn05-checkout/ does not exist on this branch yet; the
+    // guard is placed ahead of that merge rather than remembered afterwards.
+    // The CI workflows never invoke a bare `playwright test`, so this is the
+    // second line of defence, not the only one.
+    testIgnore: [
+        ...(process.env.INFRA ? [] : ["**/_infra/**"]),
+        ...(isCI ? ["**/fn05-checkout/**"] : []),
+    ],
 
     // A-005: no abnormal traffic against the production storefront.
     // Running in parallel is what actually trips Cloudflare fastest

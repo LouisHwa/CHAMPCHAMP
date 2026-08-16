@@ -1,0 +1,48 @@
+{
+  "$comment": [
+    "Expected-results baseline. CI compares a Playwright JSON run against this",
+    "and goes red only where reality diverges from the recorded findings.",
+    "",
+    "test.fail() was removed from the suite by team decision on 13 August, so",
+    "Playwright's own exit code cannot carry 'this failure is known'. This file",
+    "carries it instead, which also means an UNEXPECTED PASS is detected and",
+    "named — the case test.fail() could never report.",
+    "",
+    "expect:",
+    "  pass     procedure must report passed, and must NOT carry a 'blocked'",
+    "           annotation",
+    "  blocked  procedure must report passed AND carry a 'blocked' annotation.",
+    "           A blocked case executes in full and records the unmet condition",
+    "           as evidence; the assumption, not the store, is why it cannot be",
+    "           discharged",
+    "  fail     procedure must report failed. The failure is the recorded",
+    "           finding, so this is the green state",
+    "",
+    "scope: which runs must contain this entry. The smoke set is the merge gate",
+    "and is checked in both directions, so a renamed or deleted spec fails",
+    "rather than quietly disappearing.",
+    "",
+    "When a defect is fixed or an assumption goes stale, CI fails here first.",
+    "Update the Defect Log and this file together — never this file alone."
+  ],
+
+  "TP-01-001": {
+    "expect": "pass",
+    "scope": ["smoke"],
+    "note": "Global navigation. Read-only; a clean genuine pass."
+  },
+
+  "TP-02-002": {
+    "expect": "blocked",
+    "scope": ["smoke"],
+    "assumption": "A-013",
+    "note": "No colour option carries its own gallery image, so ENV-07 is not satisfiable. The spec asserts the block condition, so it turns red if the store gains per-variant images."
+  },
+
+  "TP-03-004": {
+    "expect": "fail",
+    "scope": ["smoke"],
+    "defect": "DEF-F3-01",
+    "note": "Header and footer Search controls do not carry the field value. Four expect.soft failures; read-only."
+  }
+}

@@ -1,0 +1,135 @@
+# SDSS automated suite — manual test run
+#
+# Runs one functional area against the LIVE store, on demand only. There is no
+# push, pull_request or schedule trigger here by design: every run against a
+# third party's production store is a human decision with a name attached to it.
+#
+# FN-05 completes four real orders (one in TP-05-004, two in TP-05-005, one in
+# TP-05-006). SPR-18 allows no more orders than the test cases require, so it
+# is gated behind typing CONFIRM and can never be selected by accident.
+
+name: Manual test run
+
+on:
+  workflow_dispatch:
+    inputs:
+      area:
+        description: 'Functional area to run'
+        required: true
+        type: choice
+        default: fn01
+        options:
+          - fn01
+          - fn02
+          - fn03
+          - fn04
+          - fn05
+          - fn06
+          - fn07
+      browser:
+        description: 'Browser project'
+        required: true
+        type: choice
+        default: chromium
+        options:
+          - chromium
+          - firefox
+          - edge
+      confirm:
+        description: 'Type CONFIRM only if you chose fn05 (it places 4 REAL orders)'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  run:
+    name: ${{ inputs.area }} on ${{ inputs.browser }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    # Same global group as the smoke job: only one run may touch the store at a
+    # time. See the note in ci.yml — a queued run can be cancelled rather than
+    # held if several stack up.
+    concurrency:
+      group: sdss-live-store
+      cancel-in-progress: false
+
+    steps:
+      # Fails before checkout if fn05 was selected without confirmation, so no
+      # order can be placed by a mis-click on the dispatch form.
+      - name: 'Gate: fn05 places real orders'
+        if: inputs.area == 'fn05'
+        run: |
+          if [ "${{ inputs.confirm }}" != "CONFIRM" ]; then
+            echo "::error::fn05 completes FOUR REAL ORDERS on the live store (TP-05-004, TP-05-005 x2, TP-05-006). Re-run and type CONFIRM in the confirm field if that is genuinely intended. SPR-18: complete no more orders than the test cases require."
+            exit 1
+          fi
+          echo "::warning::fn05 confirmed. This run will place four real orders. Record the confirmation numbers and contact address in the Test Log (SPR-18)."
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install browser
+        run: npx playwright install --with-deps ${{ inputs.browser }}
+
+      - name: Check credentials are available for this area
+        if: contains(fromJSON('["fn05","fn06","fn07"]'), inputs.area)
+        env:
+          TEST_ACCOUNT_EMAIL: ${{ secrets.TEST_ACCOUNT_EMAIL }}
+        run: |
+          if [ -z "$TEST_ACCOUNT_EMAIL" ]; then
+            echo "::error::${{ inputs.area }} reads credentials from fixtures/credentials.ts, but the repository secrets are not set. Add TEST_ACCOUNT_EMAIL, TEST_ACCOUNT_PASSWORD, IMAP_HOST, IMAP_PORT, IMAP_USER, IMAP_APP_PASSWORD, FRESH_ACCOUNT_EMAIL and FRESH_ACCOUNT_PASSWORD under Settings > Secrets and variables > Actions. SPR-24: secrets only, never the repo."
+            exit 1
+          fi
+          echo "OK — credentials present."
+
+      # EVIDENCE=1 turns on trace, video and screenshots for passing steps too,
+      # so a manual run produces the full record a Test Log entry cites.
+      #
+      # No continue-on-error and no comparator here: a manual run is for
+      # gathering evidence, and its verdict is read by a person from the report.
+      # The recorded-findings check is the merge gate's job (see ci.yml).
+      - name: Run ${{ inputs.area }}
+        env:
+          EVIDENCE: '1'
+          TEST_ACCOUNT_EMAIL: ${{ secrets.TEST_ACCOUNT_EMAIL }}
+          TEST_ACCOUNT_PASSWORD: ${{ secrets.TEST_ACCOUNT_PASSWORD }}
+          IMAP_HOST: ${{ secrets.IMAP_HOST }}
+          IMAP_PORT: ${{ secrets.IMAP_PORT }}
+          IMAP_USER: ${{ secrets.IMAP_USER }}
+          IMAP_APP_PASSWORD: ${{ secrets.IMAP_APP_PASSWORD }}
+          FRESH_ACCOUNT_EMAIL: ${{ secrets.FRESH_ACCOUNT_EMAIL }}
+          FRESH_ACCOUNT_PASSWORD: ${{ secrets.FRESH_ACCOUNT_PASSWORD }}
+        run: |
+          DIR=$(ls -d tests/${{ inputs.area }}-* 2>/dev/null | head -1)
+          if [ -z "$DIR" ]; then
+            echo "::error::No test directory found for ${{ inputs.area }}. If you selected fn05, that area has not been merged to this branch yet."
+            exit 1
+          fi
+          echo "Running $DIR on ${{ inputs.browser }}"
+          npx playwright test "$DIR" --project=${{ inputs.browser }}
+
+      - name: Upload HTML report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: report-${{ inputs.area }}-${{ inputs.browser }}
+          path: playwright-report/
+          retention-days: 30
+
+      - name: Upload evidence (traces, screenshots, video)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: evidence-${{ inputs.area }}-${{ inputs.browser }}
+          path: test-results/
+          retention-days: 30
