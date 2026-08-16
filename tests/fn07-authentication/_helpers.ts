@@ -46,7 +46,7 @@ export const PERSISTENT_PROFILE_DIR = 'playwright/.auth/chromium-profile';
  *
  * The login form is hCaptcha-protected and rejects any browser Playwright
  * drives, confirmed against bundled Chromium and against real Chrome with a
- * human solving the puzzle correctly in each case (see auth-setup-guide.md
+ * human solving the puzzle correctly in each case (see docs/auth-setup-guide.md
  * and tests/_infra/auth-session.spec.ts). TP-07-004 is the one FN-07
  * procedure where that constraint does not bite: TC-07-015 tests whether a
  * session is confined to the browser it was established in, so signing in is
@@ -57,7 +57,7 @@ export const PERSISTENT_PROFILE_DIR = 'playwright/.auth/chromium-profile';
  * it from playwright.config.ts the way the default page fixture does.
  *
  * Requires a freshly captured playwright/.auth/user.json; see
- * auth-setup-guide.md for the capture steps.
+ * docs/auth-setup-guide.md for the capture steps.
  */
 export async function startSignedInContext(browser: Browser) {
   const context = await browser.newContext({

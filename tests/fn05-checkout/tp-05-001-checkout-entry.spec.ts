@@ -14,7 +14,7 @@ import { recordUrl } from '../../utils/evidence';
  * SIGN-IN SUBSTITUTION: the second phase's "sign in" is not a live
  * action — the login form is hCaptcha-protected and rejects any
  * Playwright-driven browser regardless of pacing, confirmed all
- * session (see auth-setup-guide.md). Per instruction, this starts a
+ * session (see docs/auth-setup-guide.md). Per instruction, this starts a
  * second context already signed in via the transplanted session at
  * playwright/.auth/user.json (startSignedInContext, the same pattern
  * proven on fn04-cart-management's TP-04-006) rather than performing

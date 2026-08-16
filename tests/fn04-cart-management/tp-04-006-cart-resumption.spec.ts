@@ -14,7 +14,7 @@ import { CART_TEST_DATA } from '../../fixtures/test-data';
  * SIGN-IN SUBSTITUTION: every place the TC literally says "sign in,"
  * that action is not automatable — the login form is hCaptcha-protected
  * and rejects any Playwright-driven browser regardless of pacing,
- * confirmed all session (see auth-setup-guide.md). Per instruction,
+ * confirmed all session (see docs/auth-setup-guide.md). Per instruction,
  * this uses the transplanted session at playwright/.auth/user.json
  * (`browser.newContext({ storageState })`, the same pattern proven in
  * tests/_infra/auth-session.spec.ts) to START a context already signed
@@ -23,7 +23,7 @@ import { CART_TEST_DATA } from '../../fixtures/test-data';
  * (HeaderBar.logOutLink) since it needs no captcha.
  *
  * This test needs a real, freshly captured playwright/.auth/user.json
- * to run at all — see auth-setup-guide.md. Manually creates every
+ * to run at all — see docs/auth-setup-guide.md. Manually creates every
  * context itself (rather than using the default page/context fixture)
  * because TC-04-012 needs a genuinely signed-out context in the middle
  * of the same test, which a single file-level test.use({ storageState })

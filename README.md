@@ -7,11 +7,17 @@ the Sauce Demo Shopify Store, using Playwright + TypeScript.
 
 ## Layout
 
-    tests/        one spec per test procedure, foldered by feature (FN)
-    pages/        page objects — all selectors live here
-    fixtures/     test data carried from the TCS Test Data column
-    utils/        SPR-01 / SPR-04 evidence helpers
-    docs/         TCS, TPS and TDS source documents
+    tests/              one spec per test procedure, foldered by feature (FN)
+    pages/              page objects — all selectors live here
+    fixtures/           test data carried from the TCS Test Data column
+    utils/              SPR-01 / SPR-04 evidence helpers
+    ci/                 the expected-result baseline — one entry per procedure
+    scripts/            the CI comparator and the auth-session tooling
+    docs/               setup and run guides
+    .github/workflows/  the CI pipeline and the manual test-run dispatch
+
+The TCS, TPS, TDS and Test Log are Word documents and are not versioned
+here — they live in the team drive.
 
 ## Naming
 
@@ -27,6 +33,49 @@ at a row in the Test Case Specification.
     npm test                  # all projects
     npm run test:chromium     # single browser
     npm run report            # open the HTML report
+
+## Continuous integration
+
+The system under test is a live, third-party production store. That governs
+the whole pipeline: nothing runs on a schedule, and no unattended run ever
+places an order.
+
+`.github/workflows/ci.yml` runs three jobs.
+
+- **Quality gate** — every push. Typechecks, compiles and discovers every
+  spec, and runs three guards (no `test.fail()` reintroduced, FN-05 still
+  excluded from CI, no merge conflict markers). Sends zero requests to the
+  store.
+- **Smoke** — pull requests and merges to main. Three read-only procedures,
+  one per functional area, chosen to cover all three result shapes:
+  TP-01-003 passes, TP-02-002 is blocked under A-013, TP-03-004 fails on
+  DEF-F3-01. No cart, no checkout, no order.
+- **Publish** — main only. Deploys the smoke report to GitHub Pages.
+
+### Red and green come from the baseline, not the exit code
+
+`test.fail()` was removed from the suite on 13 August: it reports an unmet
+expected result as "passed", which contradicts the Defect Log. A confirmed
+defect therefore fails like any other failure, and Playwright's exit code
+alone can no longer tell you whether a run was good.
+
+`ci/expected-results.json` records what each procedure is *expected* to do —
+`pass`, `fail` against a named defect, or `blocked` against a named
+assumption. `scripts/check-expected-results.mjs` compares the run against it
+and decides the verdict. The build is red only where reality diverges from
+the recorded findings, which means **an unexpected pass fails the build too**
+— if a defect gets fixed without the Defect Log being updated, CI says so.
+
+### Running a full functional area
+
+CI deliberately never does this. Use the **Manual test run** workflow
+(`workflow_dispatch`) to run a whole area with a chosen browser. FN-05 is
+gated behind typing `CONFIRM`, because TP-05-004 completes a real order and
+SPR-18 allows no more orders than the test cases require.
+
+Only the smoke report is published to Pages. Evidence from manual FN-05/06/07
+runs stays a download-only artefact — it carries account emails, reset links
+and live checkout URLs, which SPR-24 keeps out of any published artefact.
 
 ## Traffic discipline
 
@@ -71,8 +120,9 @@ protection in the first place.
 ## Secrets and environment
 
 Copy `.env.example` to `.env` and fill in real values (gitignored, never
-commit it). Needed for the shopper account (`TEST_ACCOUNT_*`) and IMAP
-access to its inbox (`IMAP_*`) for confirmation/reset email checks — see
+commit it). Eight variables: the shopper account (`TEST_ACCOUNT_*`), IMAP
+access to its inbox (`IMAP_*`) for confirmation and reset email checks, and
+the ENV-14 fresh account used by TP-06-006 (`FRESH_ACCOUNT_*`). See
 `fixtures/credentials.ts` and `utils/email.ts`. In CI, the same names are
 set as GitHub Actions Secrets instead.
 
@@ -101,3 +151,8 @@ test.use({ storageState: 'playwright/.auth/user.json' });
 ```
 
 Tests that don't set this stay signed out by default (ENV-01).
+
+Sessions expire, and several specs sign out as part of the test itself,
+which kills the saved session server-side. `docs/auth-setup-guide.md` covers
+recapture; `docs/fn06-run-instructions.md` covers the per-spec prerequisites
+for FN-06.

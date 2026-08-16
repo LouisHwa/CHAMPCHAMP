@@ -31,7 +31,7 @@ export const NAME_ON_CARD = 'Test User';
  * "sign in" step wherever a TC calls for one — the login form is
  * hCaptcha-protected and rejects any Playwright-driven browser
  * regardless of pacing (confirmed all session, see
- * auth-setup-guide.md). Needs a real, freshly captured
+ * docs/auth-setup-guide.md). Needs a real, freshly captured
  * playwright/.auth/user.json to work — see that guide for the capture
  * steps. baseURL is passed explicitly since manually created contexts
  * don't inherit it from playwright.config.ts the way the default
