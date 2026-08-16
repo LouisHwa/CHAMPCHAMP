@@ -19,16 +19,21 @@ import { defineConfig, devices } from "@playwright/test";
 const isCI = !!process.env.CI;
 
 /**
- * SPR-04 only requires evidence where a step fails, so a passing run
- * records nothing by default — which is also what keeps artefact size
- * sane in CI. Set EVIDENCE=1 to capture trace, video and screenshots on a
- * green run as well, for reviewing how a procedure actually executed:
- *   PowerShell   $env:EVIDENCE=1; npx playwright test ... --project=chromium
- *   bash         EVIDENCE=1 npx playwright test ... --project=chromium
- * There is no --video CLI flag, so this is the only way to get playback
- * for a test that passes.
+ * Evidence is captured on every run, pass or fail. SPR-04 only requires it
+ * where a step fails, and this was previously gated behind EVIDENCE=1 for
+ * artefact size — but a pass with no evidence cannot be shown to have been
+ * executed, and the procedures most worth proving are the ones that cannot
+ * be cheaply repeated: TP-05-004 completes a real order, and the storefront's
+ * bot checkpoint makes any given run unrepeatable on demand.
+ *
+ * Confirmed live on 16 August: a passing TP-04-007 wrote an empty output
+ * directory — no video, screenshot or trace — and had to be run a second
+ * time with EVIDENCE=1 purely to produce the evidence for the Test Log.
+ *
+ * Set EVIDENCE=0 to fall back to failure-only capture if artefact size ever
+ * becomes a problem in CI.
  */
-const fullEvidence = !!process.env.EVIDENCE;
+const fullEvidence = process.env.EVIDENCE !== "0";
 
 export default defineConfig({
     testDir: "./tests",
@@ -40,7 +45,17 @@ export default defineConfig({
     // command line, so it is env-gated rather than absolute:
     //   PowerShell   $env:INFRA=1; npx playwright test tests/_infra/...
     //   bash         INFRA=1 npx playwright test tests/_infra/...
-    testIgnore: process.env.INFRA ? [] : "**/_infra/**",
+    testIgnore: [
+        ...(process.env.INFRA ? [] : ["**/_infra/**"]),
+
+        // FN-05 completes a REAL order on the live storefront (TP-05-004).
+        // Both CI workflows run the suite on every push and pull request to
+        // main, and one runs nightly on a schedule — unattended, that would
+        // place an order per run indefinitely. SPR-18 allows no more orders
+        // than the test cases require, and A-005 forbids actions that modify
+        // the system, so this procedure is executed deliberately, never by CI.
+        ...(isCI ? ["**/fn05-checkout/**"] : []),
+    ],
 
     // A-005: no abnormal traffic against the production storefront.
     // Running in parallel is what actually trips Cloudflare fastest
