@@ -53,6 +53,7 @@ export class CheckoutPage {
 
   readonly shippingMethodSection: Locator;
   readonly costSummaryTable: Locator;
+  readonly shoppingCartTable: Locator;
   readonly testPaymentGatewayButton: Locator;
 
   readonly billingAddressCheckbox: Locator;
@@ -66,13 +67,20 @@ export class CheckoutPage {
     // Confirmed unique — no autofill shadow duplicate for email.
     this.emailField = page.locator('input[name="email"]');
 
-    // getByLabel matches the hidden autofill shadow input too (same
-    // strict-mode duplicate issue as the text fields) — role-scoped to
-    // the real <select> (combobox) avoids it.
-    this.countrySelect = page.getByRole('combobox', { name: 'Country/Region' });
+    // CONFIRMED LIVE (13 Aug, TP-05-004): once the billing address form is
+    // rendered, TWO Country/Region selects exist and a role- or label-based
+    // lookup matches both, throwing a strict-mode violation:
+    //   autocomplete="shipping country-name"  (delivery)
+    //   autocomplete="billing country-name"   (billing)
+    // Their ids are hashed per render (SelectP0-43 / SelectP0-172) and the
+    // billing one's `form` attribute is generated too, so `autocomplete` is
+    // the only stable discriminator — it is semantic HTML the platform sets
+    // deliberately, not build output.
+    this.countrySelect = page.locator('select[name="countryCode"][autocomplete~="shipping"]');
 
     this.shippingMethodSection = page.locator('h2', { hasText: 'Shipping method' }).locator('xpath=..');
     this.costSummaryTable = page.getByRole('table', { name: 'Cost summary' });
+    this.shoppingCartTable = page.getByRole('table', { name: 'Shopping cart' });
     this.testPaymentGatewayButton = page.getByRole('button', { name: 'Test Payment Gateway' });
 
     this.billingAddressCheckbox = page.getByRole('checkbox', { name: 'Use shipping address as billing address' });
@@ -102,9 +110,19 @@ export class CheckoutPage {
     'Phone (optional)': 'phone',
   };
 
-  /** Delivery-address fields, e.g. deliveryField('Last name'), deliveryField('Postcode'). */
+  /**
+   * Delivery-address fields, e.g. deliveryField('Last name'), deliveryField('Postcode').
+   *
+   * The billing form carries inputs with the SAME name attributes, so once
+   * it is rendered a bare `[name=]` match is ambiguous in exactly the way
+   * countrySelect was (see its comment). Billing inputs are excluded by
+   * their autocomplete token rather than by naming the shipping one, so
+   * this still resolves if the platform ever changes the shipping token.
+   */
   deliveryField(label: keyof typeof CheckoutPage.FIELD_NAMES): Locator {
-    return this.page.locator(`input[name="${CheckoutPage.FIELD_NAMES[label]}"]:not([aria-hidden="true"])`);
+    return this.page.locator(
+      `input[name="${CheckoutPage.FIELD_NAMES[label]}"]:not([aria-hidden="true"]):not([autocomplete~="billing"])`,
+    );
   }
 
   /** Billing-address fields, shown once billingAddressCheckbox is unchecked. Same labels/shape as delivery. */
@@ -114,7 +132,7 @@ export class CheckoutPage {
 
   /** The Country/Region select within the (revealed) billing address section. */
   get billingCountrySelect(): Locator {
-    return this.billingAddressSection.getByRole('combobox', { name: 'Country/Region' });
+    return this.page.locator('select[name="countryCode"][autocomplete~="billing"]');
   }
 
   /** Card fields are cross-origin iframes; locate each by its stable title, not its hashed id. */
@@ -127,12 +145,51 @@ export class CheckoutPage {
     return this.cardFrame(fieldTitle).getByRole('textbox', { name: fieldTitle });
   }
 
-  /** Cost summary row cell, e.g. costSummaryRow('Subtotal'), costSummaryRow('Shipping'), costSummaryRow('Total'). */
+  /**
+   * Cost summary row cell, e.g. costSummaryRow('Subtotal'),
+   * costSummaryRow('Shipping'), costSummaryRow('Total').
+   *
+   * Matched as a start-anchored regex, not an exact string: confirmed
+   * live (9 Aug) that the Subtotal rowheader carries an item-count
+   * suffix once the cart holds more than one line — it reads "Subtotal ·
+   * 2 items", so exact: true silently matched nothing as soon as the
+   * refined TPS FN-05 (V2) made these carts two-item. Anchoring at the
+   * start still keeps "Total" from matching "Subtotal ·..." or the
+   * sibling "Including £x in taxes" rowheader.
+   */
   costSummaryRow(label: string): Locator {
     return this.costSummaryTable
       .getByRole('row')
-      .filter({ has: this.page.getByRole('rowheader', { name: label, exact: true }) })
+      .filter({ has: this.page.getByRole('rowheader', { name: new RegExp(`^${label}\\b`) }) })
       .getByRole('cell');
+  }
+
+  /**
+   * The order-summary "Shopping cart" table lists each cart line as its
+   * own row — confirmed live: role="table" (accessible name "Shopping
+   * cart", via aria-labelledby) containing a header rowgroup
+   * (columnheaders: Product image, Description, Quantity, Price) and a
+   * second rowgroup of real line rows, each with 4 cells in that same
+   * order. Only line rows contain role="cell" — the header row has
+   * role="columnheader" instead — so filtering for a cell is what
+   * distinguishes real lines from the header, without depending on the
+   * per-render hashed ids/classes everywhere else on this page.
+   */
+  lineItemRow(productName: string): Locator {
+    return this.shoppingCartTable
+      .getByRole('row')
+      .filter({ has: this.page.getByRole('cell') })
+      .filter({ has: this.page.getByText(productName, { exact: true }) });
+  }
+
+  /** The line's quantity cell (3rd of 4: image, description, quantity, price). */
+  lineItemQuantity(productName: string): Locator {
+    return this.lineItemRow(productName).getByRole('cell').nth(2);
+  }
+
+  /** The line's price cell (last of 4). */
+  lineItemPrice(productName: string): Locator {
+    return this.lineItemRow(productName).getByRole('cell').last();
   }
 
   /** A shipping method radio option by its visible name, e.g. shippingMethodOption('International Shipping'). */

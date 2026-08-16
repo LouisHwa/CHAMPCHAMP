@@ -45,3 +45,36 @@ export const FRESH_ACCOUNT = {
 };
 
 export const FRESH_ACCOUNT_STATE_PATH = 'playwright/.auth/fresh-user.json';
+
+/**
+ * TD-05-E — the guest contact email, bound in the TPS FN-05 test data
+ * table to competitiontdc2.0@gmail.com. That is the SAME address as
+ * TEST_ACCOUNT_EMAIL, not a separate mailbox as this comment previously
+ * claimed: the datum is "a guest contact email address with a reachable
+ * mailbox (ENV-17)", and the team bound it to the account they already
+ * control rather than registering a second one.
+ *
+ * It therefore defaults to TEST_ACCOUNT_EMAIL. GUEST_EMAIL only needs
+ * setting if a future cycle rebinds TD-05-E to a genuinely different
+ * address — the TPS's own instruction is to rebind the data table rather
+ * than amend the procedures.
+ *
+ * A plus-addressed variant (…+guest@) is NOT equivalent: it is a
+ * different contact address from the bound value, and an order placed
+ * with it does not match TD-05-E when the confirmation is checked.
+ */
+export const GUEST_CONTACT = {
+  email: () => process.env.GUEST_EMAIL || requireEnv('TEST_ACCOUNT_EMAIL'),
+};
+
+/**
+ * IMAP access to TD-05-E's mailbox. Defaults to IMAP_CONFIG, since the
+ * bound address is the same mailbox; override only if TD-05-E is rebound
+ * to an address that lives elsewhere.
+ */
+export const GUEST_IMAP_CONFIG = {
+  host: () => process.env.GUEST_IMAP_HOST || requireEnv('IMAP_HOST'),
+  port: () => Number(process.env.GUEST_IMAP_PORT || requireEnv('IMAP_PORT')),
+  user: () => process.env.GUEST_IMAP_USER || requireEnv('IMAP_USER'),
+  appPassword: () => process.env.GUEST_IMAP_APP_PASSWORD || requireEnv('IMAP_APP_PASSWORD'),
+};
