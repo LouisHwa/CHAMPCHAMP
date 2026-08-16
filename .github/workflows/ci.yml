@@ -1,0 +1,252 @@
+# SDSS automated suite — continuous integration
+#
+# The system under test is a LIVE, THIRD-PARTY PRODUCTION STORE. That governs
+# every decision here:
+#
+#   * Nothing runs on a schedule. There is no unattended traffic, ever.
+#   * The quality gate sends ZERO requests to the store. It compiles, discovers
+#     and lints the suite without executing a single test.
+#   * The smoke layer runs three READ-ONLY procedures at the merge gate. No
+#     cart, no checkout, no order. SPR-18 allows no more orders than the test
+#     cases require, and CI requires none.
+#   * Full runs are a human decision, taken through manual-test-run.yml.
+#
+# Red vs green does NOT come from Playwright's exit code. test.fail() was
+# removed from the suite on 13 August, so a confirmed defect exits 1 like any
+# other failure. scripts/check-expected-results.mjs compares the run against
+# ci/expected-results.json instead: the build is red only where reality
+# diverges from the recorded findings, and an unexpected PASS is a failure too.
+
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  quality-gate:
+    name: Quality gate (no store traffic)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    # Rapid pushes supersede each other; only the newest ref matters.
+    concurrency:
+      group: quality-gate-${{ github.ref }}
+      cancel-in-progress: true
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      # Compiles and collects every spec without executing any of them. Catches
+      # a spec that cannot be imported, a missing export, or a bad locator at
+      # module scope — with no requests to the store.
+      - name: Discover tests (compiles, runs nothing)
+        run: npx playwright test --list
+
+      # The anchored regex matters. The 13 August removal is documented in ten
+      # spec headers that contain the literal string "test.fail(", so an
+      # unanchored grep would match its own documentation and fail on day one.
+      # This form matches only a real call at the start of a line.
+      - name: 'Guard: no test.fail() reintroduced'
+        run: |
+          if grep -rnE "^\s*test\.fail\(" tests/; then
+            echo "::error::test.fail() found. It was removed by team decision on 13 August because it reports an unmet expected result as 'passed', contradicting the Defect Log. Known defects are declared in ci/expected-results.json instead."
+            exit 1
+          fi
+          echo "OK — no test.fail() calls."
+
+      - name: 'Guard: FN-05 excluded from CI (no unattended orders)'
+        run: |
+          if ! grep -q 'fn05-checkout' playwright.config.ts; then
+            echo "::error::playwright.config.ts no longer excludes fn05-checkout when isCI. FN-05 completes four real orders per run; SPR-18 forbids running it unattended."
+            exit 1
+          fi
+          echo "OK — FN-05 is excluded from CI runs."
+
+      - name: 'Guard: no unresolved merge conflict markers'
+        run: |
+          if grep -rnE "^(<<<<<<<|>>>>>>>) " tests/ utils/ pages/ fixtures/; then
+            echo "::error::Unresolved merge conflict markers found."
+            exit 1
+          fi
+          echo "OK — no conflict markers."
+
+  smoke:
+    name: Smoke — pass / blocked / fail (read-only)
+    needs: quality-gate
+    # Runs at the merge gate (pull request) AND after a merge lands on main.
+    # The main run is what produces the published report; see the publish job.
+    if: >-
+      github.event_name == 'pull_request' ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    # GLOBAL group, deliberately not per-ref: two pull requests must never hit
+    # the store at the same time. This is the CI equivalent of workers: 1.
+    #
+    # KNOWN LIMITATION: GitHub holds only ONE pending run per group. A third
+    # arrival cancels the pending one rather than queuing it, so under load a
+    # PR's smoke can report as "cancelled". That is not a failure and not
+    # dangerous — but it produces no verdict, so re-run it from the Actions tab.
+    concurrency:
+      group: sdss-live-store
+      cancel-in-progress: false
+
+    # No `environment:` here, deliberately. GitHub evaluates environment
+    # protection rules when a job is QUEUED, not when its deploy step runs, so
+    # declaring github-pages on this job caused the whole job — tests included —
+    # to be rejected on pull requests. Pages deployment lives in the publish
+    # job below instead, where a protection rule can never stop the suite from
+    # running.
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      # Three procedures, one per functional area, covering all three result
+      # shapes so the comparator itself is exercised on every PR:
+      #   TP-01-003  pass     blog browsing
+      #   TP-02-002  blocked  A-013, no per-colour gallery image
+      #   TP-03-004  fail     DEF-F3-01, header/footer Search controls
+      # All three are read-only: no cart, no checkout, no order.
+      #
+      # TP-01-003 is the pass case because it is the only FN-01 procedure with
+      # no defect asserted against it — TP-01-001 carries DEF-F1-03/05,
+      # TP-01-002 carries DEF-F1-01/02 and TP-01-004 carries DEF-F1-06, so all
+      # three of those are expected failures and cannot serve as the pass slot.
+      #
+      # continue-on-error because TP-03-004 is EXPECTED to fail. The comparator
+      # in the next step is what decides red or green.
+      - name: Run smoke procedures
+        id: smoke
+        continue-on-error: true
+        env:
+          PLAYWRIGHT_JSON_OUTPUT_NAME: ci-results.json
+          # Capture trace and video for the passing procedures too, not just
+          # the failing one, so the published report is explorable end to end.
+          # Three read-only tests, so the size cost is small.
+          EVIDENCE: '1'
+        run: |
+          npx playwright test \
+            tests/fn01-browsing/tp-01-003-blog-browsing.spec.ts \
+            tests/fn02-product-detail/tp-02-002-colour-variant-gallery-image.spec.ts \
+            tests/fn03-search/tp-03-004-header-and-footer-search-control.spec.ts \
+            --project=chromium \
+            --reporter=json,html
+
+      - name: Compare against the recorded findings
+        run: node scripts/check-expected-results.mjs ci-results.json --scope smoke
+
+      - name: Upload HTML report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-report
+          path: playwright-report/
+          retention-days: 14
+
+      # SPR-04: screenshot and destination URL wherever a step does not produce
+      # its expected result. Uploaded on green too, because the expected
+      # failure's evidence is exactly what the Test Log cites.
+      - name: Upload evidence (traces, screenshots, video)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-evidence
+          path: |
+            test-results/
+            ci-results.json
+          retention-days: 14
+
+  # Publishes the smoke report to GitHub Pages, from main only.
+  #
+  # WHY A SEPARATE JOB, AND WHY MAIN ONLY. A pull request does not run as its
+  # branch: it runs as refs/pull/N/merge, a temporary merge ref. The
+  # github-pages environment restricts deployment by BRANCH, and a pull ref is
+  # not a branch, so no deployment branch rule can ever match it — adding the
+  # feature branch to the allowed list does not help. Publishing therefore
+  # happens after the merge, from main.
+  #
+  # That is also the better outcome: the public URL always reflects merged,
+  # reviewed state rather than whichever pull request happened to run last.
+  #
+  # Publishes on a red verdict as well as a green one — a report you can only
+  # read when everything passed is not much use, and the expected failure
+  # (DEF-F3-01) is precisely what the Test Log cites. But it does NOT run when
+  # the smoke job was skipped or cancelled: there would be no report artefact
+  # to download, so the job would fail for a reason that has nothing to do with
+  # the store. Checking the result explicitly rather than using always() keeps
+  # a red publish job meaningful.
+  #
+  # ONLY the smoke report is published, deliberately. Those three procedures
+  # are read-only, so nothing sensitive can appear in their evidence. Manual
+  # runs of FN-05/06/07 stay download-only artefacts: that evidence carries
+  # account emails, reset links and live checkout URLs, which SPR-24 forbids in
+  # a published artefact.
+  publish:
+    name: Publish report to Pages (main only)
+    needs: smoke
+    if: >-
+      (needs.smoke.result == 'success' || needs.smoke.result == 'failure') &&
+      github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    # Scoped to this job. Note what is NOT here: contents: write. The old
+    # Allure workflow needed that to push a full report copy into the gh-pages
+    # branch every run, which is what grew the repository to 268 MB across
+    # 10,061 files. Pages deployment uploads an artefact instead, so this
+    # pipeline cannot write to the repository at all.
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+
+    environment:
+      name: github-pages
+      url: ${{ steps.pages-deploy.outputs.page_url }}
+
+    steps:
+      - name: Download the report built by the smoke job
+        uses: actions/download-artifact@v4
+        with:
+          name: smoke-report
+          path: playwright-report
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Package the report
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: playwright-report/
+
+      - name: Deploy to Pages
+        id: pages-deploy
+        uses: actions/deploy-pages@v4

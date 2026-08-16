@@ -3,7 +3,7 @@ import { Page, TestInfo } from '@playwright/test';
 /**
  * SPR-01: the destination URL shown in the address bar is recorded at
  * every navigation step. Attaching it to the test report means the
- * evidence lands in the HTML/Allure report automatically instead of
+ * evidence lands in the HTML report automatically instead of
  * living in someone's screenshot folder.
  */
 export async function recordUrl(page: Page, testInfo: TestInfo, label: string) {

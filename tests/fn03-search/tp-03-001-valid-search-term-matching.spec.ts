@@ -21,7 +21,7 @@ import { recordUrl } from '../../utils/evidence';
  *
  * #3 (the metadata/synonym term) asserts that a query actually ran and
  * that it matched at least one product. Its outcome against the live
- * store is UNVERIFIED: FN-03 has no recorded runs in the allure history,
+ * store is UNVERIFIED: FN-03 has no recorded runs in the report history,
  * so unlike DEF-F2-01 there is no evidence here either way. If #3 fails,
  * check the attached result set before recording a defect — it may mean
  * TD-03-C no longer matches anything, in which case ENV-09 is unmet and

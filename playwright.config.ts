@@ -14,7 +14,12 @@ import { defineConfig, devices } from "@playwright/test";
  * Secrets instead; dotenv silently no-ops if .env doesn't exist, so
  * this is safe either way.
  */
-// run this first 'npm install --save-dev allure-playwright'
+// Reporting: the Playwright HTML report is the primary artefact and is
+// published to GitHub Pages by .github/workflows/ci.yml. Allure was retired on
+// 16 August — it discarded Playwright's annotations, so blocked procedures
+// (A-011, A-013) could not be shown without adding Allure-specific calls to
+// every spec, and republishing its full report per run is what grew the
+// repository to 268 MB.
 
 const isCI = !!process.env.CI;
 
@@ -49,11 +54,16 @@ export default defineConfig({
         ...(process.env.INFRA ? [] : ["**/_infra/**"]),
 
         // FN-05 completes a REAL order on the live storefront (TP-05-004).
-        // Both CI workflows run the suite on every push and pull request to
-        // main, and one runs nightly on a schedule — unattended, that would
-        // place an order per run indefinitely. SPR-18 allows no more orders
-        // than the test cases require, and A-005 forbids actions that modify
-        // the system, so this procedure is executed deliberately, never by CI.
+        // SPR-18 allows no more orders than the test cases require, so it is
+        // executed deliberately and never by CI.
+        //
+        // The workflows that ran the whole suite on every push, pull request
+        // and nightly schedule were removed on 16 August; nothing in CI now
+        // invokes a bare `playwright test`, and the only automated run is
+        // three named read-only procedures at the merge gate. This guard is
+        // therefore the second line of defence rather than the only one, and
+        // it stays precisely so that adding a full-suite job later cannot
+        // quietly start placing orders.
         ...(isCI ? ["**/fn05-checkout/**"] : []),
     ],
 
@@ -84,7 +94,6 @@ export default defineConfig({
         ["list"],
         ["html", { outputFolder: "playwright-report", open: "never" }],
         ["junit", { outputFile: "test-results/junit.xml" }],
-        ["allure-playwright", { outputFolder: "allure-results" }],
     ],
 
     use: {
