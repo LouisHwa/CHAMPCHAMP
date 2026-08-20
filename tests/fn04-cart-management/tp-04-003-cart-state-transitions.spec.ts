@@ -112,9 +112,29 @@ test.describe('FN-04 Cart Management', () => {
         return index;
       }
 
-      /** Order total as displayed, trimmed; null if it cannot be read. */
+      /**
+       * Order total as displayed, trimmed; null if it cannot be read.
+       *
+       * The bounded timeout is what makes this usable. `.cart.total h2` does
+       * not exist when the cart is empty — a state this procedure reaches
+       * deliberately at #8 and #10 — and textContent() auto-waits for its
+       * element against actionTimeout (30s), with the .catch() then
+       * swallowing the timeout. So an empty cart cost 30 seconds of silent
+       * waiting and returned the same null it could have returned at once.
+       *
+       * Measured from the trace on 20 August: 12 calls, 45.28s total, of
+       * which 44.99s was two calls (30.02s at #8, 14.97s at #10). The other
+       * ten took 0.29s between them. That was the "stall on the My Cart
+       * page" reported from the demo rehearsal.
+       *
+       * Absence is a valid answer here, not something to wait for. 3s is
+       * ample for a total that is present — the ten successful reads above
+       * averaged 29ms — while capping the empty case at 3s instead of 30s.
+       * Deliberately not zero: a short wait still absorbs a slow render
+       * rather than reporting a total that exists as missing.
+       */
       async function readOrderTotal(): Promise<string | null> {
-        return (await cart.orderTotal.textContent().catch(() => null))?.trim() ?? null;
+        return (await cart.orderTotal.textContent({ timeout: 3_000 }).catch(() => null))?.trim() ?? null;
       }
 
       /**
@@ -267,7 +287,11 @@ test.describe('FN-04 Cart Management', () => {
         const aIdx = await lineIndexFor(CART_TEST_DATA.productA);
         const committedQty = await cart.lineQuantityInput(aIdx).inputValue();
         const lineTotal = (await cart.lineTotal(aIdx).textContent().catch(() => null))?.trim() ?? null;
-        const orderTotal = (await cart.orderTotal.textContent().catch(() => null))?.trim() ?? null;
+        // Through the helper rather than repeating the raw call, so this
+        // inherits the bounded timeout too. The cart is populated at this
+        // step so it does not stall today, but it is the same unbounded read
+        // of the same locator that cost 45s at #8 and #10.
+        const orderTotal = await readOrderTotal();
 
         await testInfo.attach('Committed quantity change — cart state', {
           body:
